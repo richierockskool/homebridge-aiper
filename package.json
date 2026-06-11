@@ -1,11 +1,11 @@
 {
   "name": "homebridge-plugin-name",
-  "displayName": "Plugin Name",
+  "displayName": "Aiper",
   "type": "module",
   "version": "1.0.0",
   "private": true,
-  "description": "A short description about what your plugin does.",
-  "author": "Your Name",
+  "description": "Lets you use Aiper functions from thier App",
+  "author": "Jagger Hannah",
   "license": "Apache-2.0",
   "homepage": "https://github.com/USERNAME/GITHUB_PROJECT_NAME#readme",
   "repository": {
