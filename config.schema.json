@@ -6,7 +6,7 @@
   "strictValidation": false,
   "schema": {
     "type": "object",
-    "required": ["name"],
+    "required": ["aiper"],
     "additionalProperties": false,
     "properties": {
       "name": {
