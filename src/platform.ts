@@ -28,7 +28,19 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
 
-    // This is only required when using Custom Services and Characteristics not support by HomeKit
+    const email = this.config.email as string | undefined;
+    const password = this.config.password as string | undefined;
+    const deviceId = this.config.deviceId as string | undefined;
+
+    if (!email || !password) {
+      this.log.warn('Aiper email/password are not configured yet.');
+    } else {
+      this.log.info('Aiper account configured for:', email);
+    }
+
+    if (deviceId) {
+      this.log.info('Aiper device ID configured:', deviceId);
+    }
     
 
     this.log.debug('Finished initializing platform:', this.config.name);
