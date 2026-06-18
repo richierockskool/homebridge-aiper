@@ -3,11 +3,15 @@ import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge
 import type { ExampleHomebridgePlatform } from './platform.js';
 
 export class ExamplePlatformAccessory {
-  private switchService: Service;
+  private smartService: Service;
+  private floorService: Service;
+  private wallService: Service;
   private batteryService: Service;
 
   private states = {
-    On: false,
+    Smart: false,
+    Floor: false,
+    Wall: false,
     BatteryLevel: 100,
     ChargingState: 0,
   };
@@ -18,22 +22,33 @@ export class ExamplePlatformAccessory {
   ) {
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Aiper')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Scuba Aiper Max')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, accessory.context.device?.serialNumber ?? 'AIPER-SCUBA-MAX-001')
-      .setCharacteristic(this.platform.Characteristic.Name, accessory.context.device?.displayName ?? 'Scuba Aiper Max');
+      .setCharacteristic(this.platform.Characteristic.Model, 'Scuba N1 Max')
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, accessory.context.device?.serialNumber ?? 'AIPER-SCUBA-N1-MAX-001')
+      .setCharacteristic(this.platform.Characteristic.Name, accessory.context.device?.displayName ?? 'Scuba N1 Max');
 
-    this.switchService =
-      this.accessory.getService(this.platform.Service.Switch) ||
-      this.accessory.addService(this.platform.Service.Switch);
+    this.smartService =
+      this.accessory.getService('Smart') ||
+      this.accessory.addService(this.platform.Service.Switch, 'Smart', 'smart');
 
-    this.switchService.setCharacteristic(
-      this.platform.Characteristic.Name,
-      accessory.context.device?.displayName ?? 'Scuba Aiper Max',
-    );
+    this.floorService =
+      this.accessory.getService('Floor') ||
+      this.accessory.addService(this.platform.Service.Switch, 'Floor', 'floor');
 
-    this.switchService.getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setOn.bind(this))
-      .onGet(this.getOn.bind(this));
+    this.wallService =
+      this.accessory.getService('Wall') ||
+      this.accessory.addService(this.platform.Service.Switch, 'Wall', 'wall');
+
+    this.smartService.getCharacteristic(this.platform.Characteristic.On)
+      .onSet(this.setSmart.bind(this))
+      .onGet(async () => this.states.Smart);
+
+    this.floorService.getCharacteristic(this.platform.Characteristic.On)
+      .onSet(this.setFloor.bind(this))
+      .onGet(async () => this.states.Floor);
+
+    this.wallService.getCharacteristic(this.platform.Characteristic.On)
+      .onSet(this.setWall.bind(this))
+      .onGet(async () => this.states.Wall);
 
     this.batteryService =
       this.accessory.getService(this.platform.Service.Battery) ||
@@ -51,21 +66,50 @@ export class ExamplePlatformAccessory {
     this.platform.log.info('Loaded Aiper accessory:', accessory.displayName);
   }
 
-  async setOn(value: CharacteristicValue): Promise<void> {
-    this.states.On = value as boolean;
+  private turnOffOtherModes(activeMode: 'Smart' | 'Floor' | 'Wall') {
+    this.states.Smart = activeMode === 'Smart';
+    this.states.Floor = activeMode === 'Floor';
+    this.states.Wall = activeMode === 'Wall';
 
-    if (this.states.On) {
-      this.platform.log.info('Aiper Scuba Max cleaning started');
-      // Later: call Aiper cloud/API start-clean command here
+    this.smartService.updateCharacteristic(this.platform.Characteristic.On, this.states.Smart);
+    this.floorService.updateCharacteristic(this.platform.Characteristic.On, this.states.Floor);
+    this.wallService.updateCharacteristic(this.platform.Characteristic.On, this.states.Wall);
+  }
+
+  async setSmart(value: CharacteristicValue): Promise<void> {
+    const isOn = value as boolean;
+
+    if (isOn) {
+      this.turnOffOtherModes('Smart');
+      this.platform.log.info('Aiper mode selected: Smart');
     } else {
-      this.platform.log.info('Aiper Scuba Max cleaning stopped');
-      // Later: call Aiper cloud/API stop/dock command here
+      this.states.Smart = false;
+      this.platform.log.info('Aiper Smart mode stopped');
     }
   }
 
-  async getOn(): Promise<CharacteristicValue> {
-    this.platform.log.debug('Get Aiper On ->', this.states.On);
-    return this.states.On;
+  async setFloor(value: CharacteristicValue): Promise<void> {
+    const isOn = value as boolean;
+
+    if (isOn) {
+      this.turnOffOtherModes('Floor');
+      this.platform.log.info('Aiper mode selected: Floor');
+    } else {
+      this.states.Floor = false;
+      this.platform.log.info('Aiper Floor mode stopped');
+    }
+  }
+
+  async setWall(value: CharacteristicValue): Promise<void> {
+    const isOn = value as boolean;
+
+    if (isOn) {
+      this.turnOffOtherModes('Wall');
+      this.platform.log.info('Aiper mode selected: Wall');
+    } else {
+      this.states.Wall = false;
+      this.platform.log.info('Aiper Wall mode stopped');
+    }
   }
 
   async getBatteryLevel(): Promise<CharacteristicValue> {

@@ -63,9 +63,22 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
   discoverDevices() {
     const aiperDevices = [
       {
-        uniqueId: 'aiper-scuba-max-001',
-        displayName: 'Scuba Aiper Max',
-        serialNumber: 'AIPER-SCUBA-MAX-001',
+        uniqueId: 'aiper-scuba-n1-max-smart',
+        displayName: 'Scuba N1 Max Smart',
+        mode: 'Smart',
+        serialNumber: 'AIPER-SCUBA-N1-MAX-001-SMART',
+      },
+      {
+        uniqueId: 'aiper-scuba-n1-max-floor',
+        displayName: 'Scuba N1 Max Floor',
+        mode: 'Floor',
+        serialNumber: 'AIPER-SCUBA-N1-MAX-001-FLOOR',
+      },
+      {
+        uniqueId: 'aiper-scuba-n1-max-wall',
+        displayName: 'Scuba N1 Max Wall',
+        mode: 'Wall',
+        erialNumber: 'AIPER-SCUBA-N1-MAX-001-WALL',
       },
     ];
 
