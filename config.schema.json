@@ -1,18 +1,29 @@
 {
   "pluginAlias": "Aiper",
   "pluginType": "platform",
-  "footerDisplay": "Generating a Client ID & Secret: [Aiper Dashboard] -> Integrations -> Request API Client",
   "singular": true,
-  "strictValidation": false,
   "schema": {
     "type": "object",
-    "required": ["aiper"],
-    "additionalProperties": false,
     "properties": {
       "name": {
         "title": "Name",
         "type": "string",
-        "default": "Aiper Device"
+        "default": "Aiper"
+      },
+      "email": {
+        "title": "Aiper Email",
+        "type": "string",
+        "required": true
+      },
+      "password": {
+        "title": "Aiper Password",
+        "type": "string",
+        "required": true
+      },
+      "deviceId": {
+        "title": "Aiper Device ID",
+        "type": "string",
+        "required": false
       }
     }
   }
