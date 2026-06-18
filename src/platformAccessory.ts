@@ -37,20 +37,17 @@ export class ExamplePlatformAccessory {
   async setMode(value: CharacteristicValue): Promise<void> {
     this.isOn = value as boolean;
 
-    const device = this.accessory.context.device;
-    const mode = device?.mode ?? 'Unknown';
+    const mode = this.accessory.context.device?.mode ?? 'Unknown';
 
     if (this.isOn) {
       this.platform.log.info(`Aiper mode selected: ${mode}`);
 
-      // Later: call real Aiper command here
-      // Smart -> send smart-clean command
-      // Floor -> send floor-clean command
-      // Wall  -> send wall-clean command
+      if (mode === 'Smart' || mode === 'Floor' || mode === 'Wall') {
+        await this.platform.aiperClient.startMode(mode);
+      }
     } else {
       this.platform.log.info(`Aiper mode stopped: ${mode}`);
-
-      // Later: call real Aiper stop/dock command here
+      await this.platform.aiperClient.stop();
     }
   }
 }

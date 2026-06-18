@@ -1,3 +1,5 @@
+import type { Logging } from 'homebridge';
+
 export type AiperMode = 'Smart' | 'Floor' | 'Wall';
 
 export interface AiperClientConfig {
@@ -8,13 +10,8 @@ export interface AiperClientConfig {
 
 export class AiperClient {
   constructor(
-    private readonly config: AiperClientConfig,
-    private readonly log: {
-      info: (...args: unknown[]) => void;
-      warn: (...args: unknown[]) => void;
-      error: (...args: unknown[]) => void;
-      debug: (...args: unknown[]) => void;
-    },
+  private readonly config: AiperClientConfig,
+  private readonly log: Logging,
   ) {}
 
   async login(): Promise<void> {
