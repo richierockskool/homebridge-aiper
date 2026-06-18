@@ -7,13 +7,13 @@
   "description": "Lets you use Aiper functions from thier App",
   "author": "Jagger Hannah",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/USERNAME/GITHUB_PROJECT_NAME#readme",
+  "homepage": "https://github.com/RichieRockskool/homebridge-aiper#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME.git"
+    "url": "https://github.com/RichieRockskool/homebridge-aiper.git"
   },
   "bugs": {
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME/issues"
+    "url": "https://github.com/RichieRockskool/homebridge-aiper/issues"
   },
   "keywords": [
     "homebridge-plugin"
