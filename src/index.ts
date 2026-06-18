@@ -1,11 +1,8 @@
 import type { API } from 'homebridge';
 
-import { AiperPlugin } from './plugin.js';
+import { ExampleHomebridgePlatform } from './platform.js';
+import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 
-
-/**
- * This method registers the platform with Homebridge
- */
 export default (api: API) => {
-  api.registerAccessory('AIPER', AiperPlugin);
+  api.registerPlatform(PLUGIN_NAME, PLATFORM_NAME, ExampleHomebridgePlatform);
 };
