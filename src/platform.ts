@@ -90,7 +90,7 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         uniqueId: 'aiper-scuba-n1-max-wall',
         displayName: 'Scuba N1 Max Wall',
         mode: 'Wall',
-        erialNumber: 'AIPER-SCUBA-N1-MAX-001-WALL',
+        SerialNumber: 'AIPER-SCUBA-N1-MAX-001-WALL',
       },
     ];
 
