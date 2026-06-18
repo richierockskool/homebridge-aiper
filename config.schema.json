@@ -1,6 +1,7 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
-  "pluginType": "platform",
+  "pluginAlias": "Aiper",
+  "pluginType": "accessory",
+  "footerDisplay": "Generating a Client ID & Secret: [Aiper Dashboard] -> Integrations -> Request API Client",
   "singular": true,
   "strictValidation": false,
   "schema": {
@@ -11,7 +12,7 @@
       "name": {
         "title": "Name",
         "type": "string",
-        "default": "Example Dynamic Platform"
+        "default": "Aiper Device"
       }
     }
   }
