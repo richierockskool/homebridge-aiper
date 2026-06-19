@@ -12,19 +12,22 @@
       },
       "email": {
         "title": "Aiper Email",
-        "type": "string",
-        "required": true
+        "type": "string"
       },
       "password": {
         "title": "Aiper Password",
-        "type": "string",
-        "required": true
+        "type": "string"
       },
       "deviceId": {
         "title": "Aiper Device ID",
-        "type": "string",
-        "required": false
+        "type": "string"
       }
-    }
+    },
+    "required": [
+      "email",
+      "password",
+      "deviceId"
+    ]
   }
 }
+  
