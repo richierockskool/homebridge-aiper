@@ -15,7 +15,7 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 interface AiperDevice {
   uniqueId: string;
   displayName: string;
-  mode: 'Smart' | 'Floor' | 'Wall';
+  mode: 'Smart' | 'Floor' | 'Wall' | 'Waterline';
   serialNumber: string;
 }
 
@@ -54,7 +54,8 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
           this.log.info('Aiper login completed. Checking device list...');
           await this.aiperClient.getDevices();
           await this.aiperClient.getOpenIdToken();
-
+          await this.aiperClient.getAwsCredentials();
+          await this.aiperClient.connectMqtt();
           this.log.info('Aiper device check complete. Loading HomeKit accessories...');
           this.discoverDevices();
         })
@@ -91,6 +92,12 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         uniqueId: 'aiper-scuba-n1-max-wall',
         displayName: 'Scuba N1 Max Wall',
         mode: 'Wall',
+        serialNumber: 'T1D55200156',
+      },
+      {
+        uniqueId: 'aiper-scuba-n1-max-waterline',
+        displayName: 'Scuba N1 Max Waterline',
+        mode: 'Waterline',
         serialNumber: 'T1D55200156',
       },
     ];

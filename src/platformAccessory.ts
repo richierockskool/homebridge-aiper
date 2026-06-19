@@ -5,7 +5,24 @@ import type { ExampleHomebridgePlatform } from './platform.js';
 export class ExamplePlatformAccessory {
   private switchService: Service;
   private isOn = false;
+  private turnOffOtherModeSwitches(activeMode: 'Smart' | 'Floor' | 'Wall'| 'Waterline'): void {
+    const deviceMode = this.accessory.context.device?.mode;
 
+    for (const accessory of this.platform.accessories.values()) {
+      const mode = accessory.context.device?.mode;
+
+      if (mode && mode !== activeMode) {
+        const service = accessory.getService(this.platform.Service.Switch);
+
+        service?.updateCharacteristic(
+          this.platform.Characteristic.On,
+          false,
+        );
+      }
+    }
+
+    this.platform.log.info(`Aiper active mode set to: ${deviceMode}`);
+  }
   constructor(
     private readonly platform: ExampleHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
@@ -35,14 +52,21 @@ export class ExamplePlatformAccessory {
   }
 
   async setMode(value: CharacteristicValue): Promise<void> {
-    this.isOn = value as boolean;
+    const nextOn = value as boolean;
+
+    if (this.isOn === nextOn) {
+      return;
+    }
+
+    this.isOn = nextOn;
 
     const mode = this.accessory.context.device?.mode ?? 'Unknown';
 
     if (this.isOn) {
+      this.turnOffOtherModeSwitches(mode);
       this.platform.log.info(`Aiper mode selected: ${mode}`);
 
-      if (mode === 'Smart' || mode === 'Floor' || mode === 'Wall') {
+      if (mode === 'Smart' || mode === 'Floor' || mode === 'Wall' || mode === 'Waterline') {
         await this.platform.aiperClient.startMode(mode);
       }
     } else {

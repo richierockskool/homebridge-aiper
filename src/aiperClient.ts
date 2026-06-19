@@ -1,7 +1,8 @@
 import type { Logging } from 'homebridge';
 import { AiperCrypto } from './aiperCrypto.js';
+import { auth, io, iot, mqtt } from 'aws-iot-device-sdk-v2';
 
-export type AiperMode = 'Smart' | 'Floor' | 'Wall';
+export type AiperMode = 'Smart' | 'Floor' | 'Wall' | 'Waterline';
 
 export interface AiperClientConfig {
   email?: string;
@@ -21,6 +22,13 @@ export class AiperClient {
   private openIdToken?: string;
   private iotEndpoint?: string;
   private awsRegion?: string;
+  private awsAccessKeyId?: string;
+  private awsSecretAccessKey?: string;
+  private awsSessionToken?: string;
+  private mqttConnection?: mqtt.MqttClientConnection;
+  private mqttConnected = false;
+  private lastCommandKey?: string;
+  private lastCommandAt = 0;
 
   constructor(
     private readonly config: AiperClientConfig,
@@ -162,26 +170,188 @@ export class AiperClient {
     this.log.info(`Aiper OpenID OK. IoT endpoint: ${this.iotEndpoint ?? 'missing'}`);
   }
 
+  async getAwsCredentials(): Promise<void> {
+    if (!this.identityId || !this.openIdToken) {
+      throw new Error('Aiper AWS credentials skipped: missing identityId/openIdToken.');
+    }
+
+    let region = this.awsRegion;
+
+    if (!region && this.iotEndpoint?.includes('.iot.')) {
+      region = this.iotEndpoint.split('.iot.')[1]?.split('.')[0];
+    }
+
+    region = region ?? 'us-east-2';
+
+    const response = await fetch(`https://cognito-identity.${region}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityService.GetCredentialsForIdentity',
+      },
+      body: JSON.stringify({
+        IdentityId: this.identityId,
+        Logins: {
+          'cognito-identity.amazonaws.com': this.openIdToken,
+        },
+      }),
+    });
+
+    const text = await response.text();
+    const payload = JSON.parse(text);
+
+    const credentials = payload.Credentials ?? {};
+
+    this.awsAccessKeyId = credentials.AccessKeyId;
+    this.awsSecretAccessKey = credentials.SecretKey;
+    this.awsSessionToken = credentials.SessionToken;
+
+    if (!this.awsAccessKeyId || !this.awsSecretAccessKey) {
+      throw new Error(`Aiper AWS credentials failed: ${text}`);
+    }
+
+    this.log.info('Aiper AWS credentials OK.');
+  }
   async getStatus(): Promise<void> {
     this.log.info('Aiper status placeholder called.');
 
     // Later:
     // Return battery, charging, current mode, online/offline, etc.
   }
+  async connectMqtt(): Promise<void> {
+    if (!this.iotEndpoint || !this.awsRegion || !this.identityId) {
+      throw new Error('Aiper MQTT skipped: missing IoT endpoint/region/identity.');
+    }
 
+    if (!this.awsAccessKeyId || !this.awsSecretAccessKey) {
+      throw new Error('Aiper MQTT skipped: missing AWS credentials.');
+    }
+
+    const bootstrap = new io.ClientBootstrap();
+
+    const credentialsProvider = auth.AwsCredentialsProvider.newStatic(
+      this.awsAccessKeyId,
+      this.awsSecretAccessKey,
+      this.awsSessionToken,
+    );
+
+    const configBuilder = iot.AwsIotMqttConnectionConfigBuilder.new_with_websockets({
+      region: this.awsRegion,
+      credentials_provider: credentialsProvider,
+    });
+
+    configBuilder.with_endpoint(this.iotEndpoint);
+    configBuilder.with_client_id(this.identityId);
+    configBuilder.with_clean_session(false);
+    configBuilder.with_keep_alive_seconds(60);
+
+    const client = new mqtt.MqttClient(bootstrap);
+    this.mqttConnection = client.new_connection(configBuilder.build());
+
+    await this.mqttConnection.connect();
+
+    this.mqttConnected = true;
+    this.log.info('Aiper MQTT connected.');
+  }
+
+  private crc16(data: string): number {
+    let crc = 0x9966;
+
+    for (const char of Buffer.from(data, 'utf8')) {
+      crc ^= char;
+
+      for (let i = 0; i < 8; i++) {
+        if (crc & 1) {
+          crc = (crc >> 1) ^ 0xA001;
+        } else {
+          crc >>= 1;
+        }
+      }
+    }
+
+    return crc;
+  }
+
+  private modeNumber(mode: AiperMode): number {
+    switch (mode) {
+    case 'Smart':
+      return 1;
+    case 'Floor':
+      return 2;
+    case 'Wall':
+      return 3;
+    case 'Waterline':
+      return 4; 
+    }
+  }
+
+  private async sendMachineAt(atCommand: string): Promise<void> {
+    if (!this.mqttConnection || !this.mqttConnected) {
+      await this.connectMqtt();
+    }
+
+    if (!this.mqttConnection) {
+      throw new Error('Aiper MQTT connection unavailable.');
+    }
+
+    const sn = this.config.deviceId || 'T1D55200156';
+
+    const data = {
+      sn,
+      timeZone: 'America/Toronto',
+      cmd: atCommand,
+    };
+
+    const dataJson = JSON.stringify(data);
+
+    const payload = {
+      type: 'Machine',
+      data,
+      res: 0,
+      chksum: this.crc16(dataJson),
+    };
+
+    const topic = `aiper/things/${sn}/downChan`;
+    const message = JSON.stringify(payload);
+
+    this.log.info(`Aiper MQTT publish ${topic}: ${message}`);
+
+    await this.mqttConnection.publish(
+      topic,
+      message,
+      mqtt.QoS.AtLeastOnce,
+    );
+  }
   async startMode(mode: AiperMode): Promise<void> {
-    this.log.info(`Aiper command placeholder: start ${mode}`);
+    const modeId = this.modeNumber(mode);
+    const key = `mode:${modeId}`;
+    const now = Date.now();
 
-    // Later:
-    // Smart -> send smart-clean command
-    // Floor -> send floor-clean command
-    // Wall  -> send wall-clean command
+    if (this.lastCommandKey === key && now - this.lastCommandAt < 2500) {
+      this.log.warn(`Aiper duplicate command ignored: ${mode}`);
+      return;
+    }
+
+    this.lastCommandKey = key;
+    this.lastCommandAt = now;
+
+    this.log.info(`Aiper real command: ${mode} -> AT+MODE=${modeId}`);
+    await this.sendMachineAt(`AT+MODE=${modeId}`);
   }
 
   async stop(): Promise<void> {
-    this.log.info('Aiper command placeholder: stop');
+    const key = 'mode:0';
+    const now = Date.now();
 
-    // Later:
-    // Send stop / pause / dock command
+    if (this.lastCommandKey === key && now - this.lastCommandAt < 2500) {
+      this.log.warn('Aiper duplicate stop ignored.');
+      return;
+    }
+
+    this.lastCommandKey = key;
+    this.lastCommandAt = now;
+
+    this.log.info('Aiper real command: stop -> AT+MODE=0');
+    await this.sendMachineAt('AT+MODE=0');
   }
 }
