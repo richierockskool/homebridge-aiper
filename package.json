@@ -2,8 +2,8 @@
   "name": "homebridge-aiper",
   "displayName": "Aiper",
   "type": "module",
-  "version": "1.0.0",
-  "private": true,
+  "version": "1.0.1",
+  "private": true,npm run build
   "description": "Lets you use Aiper functions from thier App",
   "author": "Jagger Hannah",
   "license": "Apache-2.0",
@@ -30,6 +30,7 @@
     "watch": "npm run build && npm link && nodemon"
   },
   "dependencies": {
+    "aws-iot-device-sdk-v2": "^1.27.0",
     "homebridge-lib": "^8.0.1",
     "node-forge": "^1.4.0"
   },

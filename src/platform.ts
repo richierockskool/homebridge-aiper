@@ -50,11 +50,17 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
       this.log.info('Aiper plugin starting...');
 
       this.aiperClient.login()
-        .then(() => {
+        .then(async () => {
+          this.log.info('Aiper login completed. Checking device list...');
+          await this.aiperClient.getDevices();
+          await this.aiperClient.getOpenIdToken();
+
+          this.log.info('Aiper device check complete. Loading HomeKit accessories...');
           this.discoverDevices();
         })
         .catch((error: unknown) => {
-          this.log.error('Aiper login test failed:', error);
+          this.log.error('Aiper startup failed:', error);
+          this.log.warn('Loading HomeKit accessories anyway.');
           this.discoverDevices();
         });
     });
