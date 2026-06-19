@@ -1,8 +1,23 @@
-import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
+import type {
+  API,
+  Characteristic,
+  DynamicPlatformPlugin,
+  Logging,
+  PlatformAccessory,
+  PlatformConfig,
+  Service,
+} from 'homebridge';
 
 import { AiperClient } from './aiperClient.js';
 import { ExamplePlatformAccessory } from './platformAccessory.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
+
+interface AiperDevice {
+  uniqueId: string;
+  displayName: string;
+  mode: 'Smart' | 'Floor' | 'Wall';
+  serialNumber: string;
+}
 
 export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
@@ -10,15 +25,15 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
   public readonly aiperClient: AiperClient;
 
   public readonly accessories: Map<string, PlatformAccessory> = new Map();
-  public readonly discoveredCacheUUIDs: string[] = [];
+  private readonly discoveredCacheUUIDs: string[] = [];
 
   constructor(
     public readonly log: Logging,
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
-    this.Service = api.hap.Service;
-    this.Characteristic = api.hap.Characteristic;
+    this.Service = this.api.hap.Service;
+    this.Characteristic = this.api.hap.Characteristic;
 
     this.aiperClient = new AiperClient(
       {
@@ -29,43 +44,48 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
       this.log,
     );
 
-    this.log.debug('Finished initializing platform:', this.config.name);
+    this.log.info('Finished initializing Aiper platform:', this.config.name ?? 'Aiper');
 
-    this.api.on('didFinishLaunching', async () => {
-      this.log.debug('Executed didFinishLaunching callback');
+    this.api.on('didFinishLaunching', () => {
+      this.log.info('Aiper plugin starting...');
 
-      await this.aiperClient.login();
-
-      this.discoverDevices();
+      this.aiperClient.login()
+        .then(() => {
+          this.discoverDevices();
+        })
+        .catch((error: unknown) => {
+          this.log.error('Aiper login test failed:', error);
+          this.discoverDevices();
+        });
     });
   }
 
-  configureAccessory(accessory: PlatformAccessory) {
+  configureAccessory(accessory: PlatformAccessory): void {
     this.log.info('Loading accessory from cache:', accessory.displayName);
     this.accessories.set(accessory.UUID, accessory);
   }
 
-  discoverDevices() {
+  discoverDevices(): void {
     this.discoveredCacheUUIDs.length = 0;
 
-    const aiperDevices = [
+    const aiperDevices: AiperDevice[] = [
       {
         uniqueId: 'aiper-scuba-n1-max-smart',
         displayName: 'Scuba N1 Max Smart',
         mode: 'Smart',
-        serialNumber: 'AIPER-SCUBA-N1-MAX-001-SMART',
+        serialNumber: 'T1D55200156',
       },
       {
         uniqueId: 'aiper-scuba-n1-max-floor',
         displayName: 'Scuba N1 Max Floor',
         mode: 'Floor',
-        serialNumber: 'AIPER-SCUBA-N1-MAX-001-FLOOR',
+        serialNumber: 'T1D55200156',
       },
       {
         uniqueId: 'aiper-scuba-n1-max-wall',
         displayName: 'Scuba N1 Max Wall',
         mode: 'Wall',
-        serialNumber: 'AIPER-SCUBA-N1-MAX-001-WALL',
+        serialNumber: 'T1D55200156',
       },
     ];
 
@@ -96,7 +116,7 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
 
     for (const [uuid, accessory] of this.accessories) {
       if (!this.discoveredCacheUUIDs.includes(uuid)) {
-        this.log.info('Removing existing accessory from cache:', accessory.displayName);
+        this.log.info('Removing stale accessory from cache:', accessory.displayName);
         this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
       }
     }

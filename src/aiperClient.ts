@@ -27,12 +27,50 @@ export class AiperClient {
       return;
     }
 
-    this.log.info('Aiper login placeholder ready for:', this.config.email);
+    const loginBody = {
+      email: this.config.email,
+      password: this.config.password,
+    };
 
-    // Later:
-    // 1. Call Aiper cloud login
-    // 2. Store access token
-    // 3. Refresh token when needed
+    const headers = {
+      'Content-Type': 'application/json',
+      version: '3.0.0',
+      os: 'android',
+      charset: 'UTF-8',
+      'Accept-Language': 'en',
+      zoneId: 'America/Toronto',
+      token: '',
+      encryptKey: this.crypto.encryptKeyHeader,
+    };
+
+    const response = await fetch(`${this.baseUrl}/login`, {
+      method: 'POST',
+      headers,
+      body: this.crypto.encryptRequest(loginBody),
+    });
+
+    const text = await response.text();
+    const decrypted = this.crypto.decryptResponse(text);
+    const payload = JSON.parse(decrypted);
+
+    if (!(payload.code === 0 || payload.code === '0' || payload.successful === true)) {
+      throw new Error(`Aiper login failed: ${payload.msg ?? payload.message ?? 'Unknown error'}`);
+    }
+
+    const data = payload.data ?? {};
+
+    this.token = data.token;
+    this.userId = data.serialNumber;
+
+    if (Array.isArray(data.domain) && data.domain.length > 0) {
+      this.baseUrl = String(data.domain[0]).replace(/\/$/, '');
+    }
+
+    if (!this.token) {
+      throw new Error('Aiper login failed: no token returned.');
+    }
+
+    this.log.info('Aiper login successful.');
   }
 
   async getStatus(): Promise<void> {
