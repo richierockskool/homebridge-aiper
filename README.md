@@ -7,6 +7,7 @@ Adds support for Aiper pool robots.
 - Scuba N1 Max
 
 ## Features
+Apple Homekit for 
 
 - Smart Mode
 - Floor Mode
