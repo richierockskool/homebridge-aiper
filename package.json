@@ -3,7 +3,7 @@
   "displayName": "Aiper",
   "type": "module",
   "version": "1.0.1",
-  "private": true,npm run build
+  "private": true,
   "description": "Lets you use Aiper functions from thier App",
   "author": "Jagger Hannah",
   "license": "Apache-2.0",
