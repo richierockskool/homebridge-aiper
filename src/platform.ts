@@ -15,7 +15,7 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 interface AiperDevice {
   uniqueId: string;
   displayName: string;
-  mode: 'Main';
+  mode: 'Main' | 'Battery';
   serialNumber: string;
 }
 
@@ -79,10 +79,16 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
 
     const aiperDevices: AiperDevice[] = [
       {
-        uniqueId: 'aiper-scuba-n1-max-main',
-        displayName: 'Scuba N1 Max',
+        uniqueId: 'aiper-scuba-n1-max-controls',
+        displayName: 'Scuba N1 Max Controls',
         mode: 'Main',
-        serialNumber: 'T1D55200156',
+        serialNumber: this.config.deviceId ?? 'Unknown',
+      },
+      {
+        uniqueId: 'aiper-scuba-n1-max-battery',
+        displayName: 'Scuba N1 Max Battery',
+        mode: 'Battery',
+        serialNumber: this.config.deviceId ?? 'Unknown',
       },
     ];
     for (const device of aiperDevices) {

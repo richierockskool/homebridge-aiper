@@ -296,7 +296,11 @@ export class AiperClient {
       return;
     }
 
-    const sn = this.config.deviceId || 'T1D55200156';
+    const sn = this.config.deviceId;
+
+    if (!sn) {
+      throw new Error('Aiper deviceId not configured.');
+    }
 
     const topics = [
       `aiper/things/${sn}/upChan`,
@@ -363,7 +367,11 @@ export class AiperClient {
       throw new Error('Aiper MQTT connection unavailable.');
     }
 
-    const sn = this.config.deviceId || 'T1D55200156';
+    const sn = this.config.deviceId;
+
+    if (!sn) {
+      throw new Error('Aiper deviceId not configured.');
+    }
 
     const data = {
       sn,

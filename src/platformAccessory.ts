@@ -5,11 +5,11 @@ import type { ExampleHomebridgePlatform } from './platform.js';
 type AiperMode = 'Smart' | 'Floor' | 'Wall' | 'Waterline';
 
 export class ExamplePlatformAccessory {
-  private smartService: Service;
-  private floorService: Service;
-  private wallService: Service;
-  private waterlineService: Service;
-  private batteryService: Service;
+  private smartService?: Service;
+  private floorService?: Service;
+  private wallService?: Service;
+  private waterlineService?: Service;
+  private batteryService?: Service;
 
   private activeMode?: AiperMode;
 
@@ -17,8 +17,10 @@ export class ExamplePlatformAccessory {
     private readonly platform: ExampleHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
-    const displayName = 'Scuba N1 Max';
-    const serialNumber = this.accessory.context.device?.serialNumber ?? 'T1D55200156';
+    const device = this.accessory.context.device;
+    const displayName = device?.displayName ?? 'Scuba N1 Max';
+    const mode = device?.mode ?? 'Main';
+    const serialNumber = device?.serialNumber ?? this.platform.config.deviceId ?? 'Unknown';
 
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Aiper')
@@ -26,14 +28,30 @@ export class ExamplePlatformAccessory {
       .setCharacteristic(this.platform.Characteristic.SerialNumber, serialNumber)
       .setCharacteristic(this.platform.Characteristic.Name, displayName);
 
+    if (mode === 'Battery') {
+      this.setupBatteryAccessory();
+    } else {
+      this.setupControlsAccessory();
+    }
+
+    this.platform.log.info('Loaded Aiper accessory:', displayName);
+  }
+
+  private setupControlsAccessory(): void {
     this.smartService = this.setupModeSwitch('Smart', 'smart');
     this.floorService = this.setupModeSwitch('Floor', 'floor');
     this.wallService = this.setupModeSwitch('Wall', 'wall');
     this.waterlineService = this.setupModeSwitch('Waterline', 'waterline');
+  }
 
+  private setupBatteryAccessory(): void {
     this.batteryService =
       this.accessory.getService(this.platform.Service.Battery) ||
       this.accessory.addService(this.platform.Service.Battery);
+
+    this.batteryService
+      .setCharacteristic(this.platform.Characteristic.Name, 'Battery')
+      .setCharacteristic(this.platform.Characteristic.ConfiguredName, 'Battery');
 
     this.batteryService.getCharacteristic(this.platform.Characteristic.BatteryLevel)
       .onGet(async () => this.platform.aiperClient.latestBattery);
@@ -44,11 +62,26 @@ export class ExamplePlatformAccessory {
           ? this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW
           : this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL,
       );
-    this.batteryService
-      .setCharacteristic(this.platform.Characteristic.Name, 'Battery')
-      .setCharacteristic(this.platform.Characteristic.ConfiguredName, 'Battery');
 
-    this.platform.log.info('Loaded Aiper accessory:', displayName);
+    this.batteryService.getCharacteristic(this.platform.Characteristic.ChargingState)
+      .onGet(async () => this.platform.Characteristic.ChargingState.NOT_CHARGING);
+
+    this.batteryService.updateCharacteristic(
+      this.platform.Characteristic.BatteryLevel,
+      this.platform.aiperClient.latestBattery,
+    );
+
+    this.batteryService.updateCharacteristic(
+      this.platform.Characteristic.StatusLowBattery,
+      this.platform.aiperClient.latestBattery <= 20
+        ? this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW
+        : this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL,
+    );
+
+    this.batteryService.updateCharacteristic(
+      this.platform.Characteristic.ChargingState,
+      this.platform.Characteristic.ChargingState.NOT_CHARGING,
+    );
   }
 
   private setupModeSwitch(mode: AiperMode, subtype: string): Service {
@@ -68,10 +101,10 @@ export class ExamplePlatformAccessory {
   }
 
   private updateModeSwitches(): void {
-    this.smartService.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Smart');
-    this.floorService.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Floor');
-    this.wallService.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Wall');
-    this.waterlineService.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Waterline');
+    this.smartService?.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Smart');
+    this.floorService?.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Floor');
+    this.wallService?.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Wall');
+    this.waterlineService?.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Waterline');
   }
 
   private async setMode(mode: AiperMode, value: CharacteristicValue): Promise<void> {
