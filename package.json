@@ -2,7 +2,7 @@
   "name": "homebridge-aiper",
   "displayName": "Aiper",
   "type": "module",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "private": false,
   "description": "Lets you control supported Aiper pool robot functions from Homebridge.",
   "author": "Jagger Hannah",
@@ -16,12 +16,12 @@
     "url": "https://github.com/RichieRockskool/homebridge-aiper/issues"
   },
   "keywords": [
-  "homebridge-plugin",
-  "aiper",
-  "pool",
-  "robot",
-  "homekit"
-],
+    "homebridge-plugin",
+    "aiper",
+    "pool",
+    "robot",
+    "homekit"
+  ],
   "main": "dist/index.js",
   "engines": {
     "node": "^22.10.0 || ^24.0.0",
