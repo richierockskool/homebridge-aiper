@@ -1,4 +1,5 @@
 import type { Logging } from 'homebridge';
+import { AiperCrypto } from './aiperCrypto.js';
 
 export type AiperMode = 'Smart' | 'Floor' | 'Wall';
 
@@ -9,11 +10,17 @@ export interface AiperClientConfig {
 }
 
 export class AiperClient {
-  constructor(
-  private readonly config: AiperClientConfig,
-  private readonly log: Logging,
-  ) {}
 
+  private readonly crypto = new AiperCrypto();
+
+  private token?: string;
+  private userId?: string;
+  private baseUrl = 'https://apiamerica.aiper.com';
+
+  constructor(
+    private readonly config: AiperClientConfig,
+    private readonly log: Logging,
+  ) {}
   async login(): Promise<void> {
     if (!this.config.email || !this.config.password) {
       this.log.warn('Aiper login skipped: email/password not configured.');
