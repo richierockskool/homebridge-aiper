@@ -29,6 +29,11 @@ export class AiperClient {
   private mqttConnected = false;
   private lastCommandKey?: string;
   private lastCommandAt = 0;
+  public latestBattery = 100;
+  public latestStatus = 0;
+  public latestMode = 0;
+  public latestWarn = 0;
+  public latestInWater = 0;
 
   constructor(
     private readonly config: AiperClientConfig,
@@ -285,6 +290,70 @@ export class AiperClient {
     }
   }
 
+  async subscribeToRobot(): Promise<void> {
+    if (!this.mqttConnection) {
+      this.log.warn('Aiper MQTT subscribe skipped: no connection.');
+      return;
+    }
+
+    const sn = this.config.deviceId || 'T1D55200156';
+
+    const topics = [
+      `aiper/things/${sn}/upChan`,
+      `aiper/things/${sn}/shadow/report`,
+      `$aws/things/${sn}/shadow/get/accepted`,
+      `$aws/things/${sn}/shadow/update/accepted`,
+      `$aws/things/${sn}/shadow/update/delta`,
+    ];
+
+    for (const topic of topics) {
+      await this.mqttConnection.subscribe(topic, mqtt.QoS.AtLeastOnce, (receivedTopic, payload) => {
+        const message = new TextDecoder().decode(payload);
+        this.handleIncomingMqtt(receivedTopic, message);
+      });
+
+      this.log.info(`Aiper subscribed to ${topic}`);
+    }
+  }
+  private handleIncomingMqtt(topic: string, message: string): void {
+    try {
+      const payload = JSON.parse(message);
+
+      const machine = payload?.state?.reported?.Machine;
+      if (machine && machine.status !== undefined && machine.mode !== undefined && machine.cap !== undefined) {
+        const status = machine.status;
+        const mode = machine.mode;
+        const battery = machine.cap;
+        const warn = machine.warn ?? machine.warn_code;
+        const inWater = machine.in_water;
+        this.latestStatus = machine.status;
+        this.latestMode = machine.mode;
+        this.latestBattery = machine.cap;
+        this.latestWarn = machine.warn ?? machine.warn_code ?? 0;
+        this.latestInWater = machine.in_water ?? 0;
+
+        this.log.info(
+          `Aiper status update: status=${status} mode=${mode} battery=${battery}% warn=${warn} inWater=${inWater}`,
+        );
+
+        return;
+      }
+
+      const netStat = payload?.state?.reported?.NetStat;
+      if (netStat) {
+        this.log.info(`Aiper network update: online=${netStat.online} ble=${netStat.ble} wifi=${netStat.sta}`);
+        return;
+      }
+
+      const data = payload?.data;
+      if (payload?.type === 'DevInfoReport' && data) {
+        this.log.info(`Aiper device info: model=${data.model} ip=${data.ip} ble=${data.bleName}`);
+        return;
+      }
+    } catch {
+    // ignore parse noise
+    }
+  }
   private async sendMachineAt(atCommand: string): Promise<void> {
     if (!this.mqttConnection || !this.mqttConnected) {
       await this.connectMqtt();

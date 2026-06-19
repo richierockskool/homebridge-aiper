@@ -2,35 +2,23 @@ import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge
 
 import type { ExampleHomebridgePlatform } from './platform.js';
 
+type AiperMode = 'Smart' | 'Floor' | 'Wall' | 'Waterline';
+
 export class ExamplePlatformAccessory {
-  private switchService: Service;
-  private isOn = false;
-  private turnOffOtherModeSwitches(activeMode: 'Smart' | 'Floor' | 'Wall'| 'Waterline'): void {
-    const deviceMode = this.accessory.context.device?.mode;
+  private smartService: Service;
+  private floorService: Service;
+  private wallService: Service;
+  private waterlineService: Service;
+  private batteryService: Service;
 
-    for (const accessory of this.platform.accessories.values()) {
-      const mode = accessory.context.device?.mode;
+  private activeMode?: AiperMode;
 
-      if (mode && mode !== activeMode) {
-        const service = accessory.getService(this.platform.Service.Switch);
-
-        service?.updateCharacteristic(
-          this.platform.Characteristic.On,
-          false,
-        );
-      }
-    }
-
-    this.platform.log.info(`Aiper active mode set to: ${deviceMode}`);
-  }
   constructor(
     private readonly platform: ExampleHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
-    const device = this.accessory.context.device;
-    const displayName = device?.displayName ?? 'Scuba N1 Max';
-    const modeName = device?.mode ?? displayName;
-    const serialNumber = device?.serialNumber ?? 'AIPER-SCUBA-N1-MAX-001';
+    const displayName = 'Scuba N1 Max';
+    const serialNumber = this.accessory.context.device?.serialNumber ?? 'T1D55200156';
 
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Aiper')
@@ -38,40 +26,78 @@ export class ExamplePlatformAccessory {
       .setCharacteristic(this.platform.Characteristic.SerialNumber, serialNumber)
       .setCharacteristic(this.platform.Characteristic.Name, displayName);
 
-    this.switchService =
-      this.accessory.getService(this.platform.Service.Switch) ||
-      this.accessory.addService(this.platform.Service.Switch);
+    this.smartService = this.setupModeSwitch('Smart', 'smart');
+    this.floorService = this.setupModeSwitch('Floor', 'floor');
+    this.wallService = this.setupModeSwitch('Wall', 'wall');
+    this.waterlineService = this.setupModeSwitch('Waterline', 'waterline');
 
-    this.switchService.setCharacteristic(this.platform.Characteristic.Name, modeName);
+    this.batteryService =
+      this.accessory.getService(this.platform.Service.Battery) ||
+      this.accessory.addService(this.platform.Service.Battery);
 
-    this.switchService.getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setMode.bind(this))
-      .onGet(async () => this.isOn);
+    this.batteryService.getCharacteristic(this.platform.Characteristic.BatteryLevel)
+      .onGet(async () => this.platform.aiperClient.latestBattery);
+
+    this.batteryService.getCharacteristic(this.platform.Characteristic.StatusLowBattery)
+      .onGet(async () =>
+        this.platform.aiperClient.latestBattery <= 20
+          ? this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW
+          : this.platform.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL,
+      );
+    this.batteryService
+      .setCharacteristic(this.platform.Characteristic.Name, 'Battery')
+      .setCharacteristic(this.platform.Characteristic.ConfiguredName, 'Battery');
 
     this.platform.log.info('Loaded Aiper accessory:', displayName);
   }
 
-  async setMode(value: CharacteristicValue): Promise<void> {
+  private setupModeSwitch(mode: AiperMode, subtype: string): Service {
+    const service =
+      this.accessory.getService(mode) ||
+      this.accessory.addService(this.platform.Service.Switch, mode, subtype);
+
+    service
+      .setCharacteristic(this.platform.Characteristic.Name, mode)
+      .setCharacteristic(this.platform.Characteristic.ConfiguredName, mode);
+
+    service.getCharacteristic(this.platform.Characteristic.On)
+      .onSet(async value => this.setMode(mode, value))
+      .onGet(async () => this.activeMode === mode);
+
+    return service;
+  }
+
+  private updateModeSwitches(): void {
+    this.smartService.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Smart');
+    this.floorService.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Floor');
+    this.wallService.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Wall');
+    this.waterlineService.updateCharacteristic(this.platform.Characteristic.On, this.activeMode === 'Waterline');
+  }
+
+  private async setMode(mode: AiperMode, value: CharacteristicValue): Promise<void> {
     const nextOn = value as boolean;
 
-    if (this.isOn === nextOn) {
+    if (nextOn) {
+      if (this.activeMode === mode) {
+        return;
+      }
+
+      this.activeMode = mode;
+      this.updateModeSwitches();
+
+      this.platform.log.info(`Aiper mode selected: ${mode}`);
+      await this.platform.aiperClient.startMode(mode);
       return;
     }
 
-    this.isOn = nextOn;
-
-    const mode = this.accessory.context.device?.mode ?? 'Unknown';
-
-    if (this.isOn) {
-      this.turnOffOtherModeSwitches(mode);
-      this.platform.log.info(`Aiper mode selected: ${mode}`);
-
-      if (mode === 'Smart' || mode === 'Floor' || mode === 'Wall' || mode === 'Waterline') {
-        await this.platform.aiperClient.startMode(mode);
-      }
-    } else {
-      this.platform.log.info(`Aiper mode stopped: ${mode}`);
-      await this.platform.aiperClient.stop();
+    if (this.activeMode !== mode) {
+      return;
     }
+
+    this.activeMode = undefined;
+    this.updateModeSwitches();
+
+    this.platform.log.info(`Aiper mode stopped: ${mode}`);
+    await this.platform.aiperClient.stop();
   }
 }

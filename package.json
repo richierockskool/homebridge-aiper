@@ -2,7 +2,7 @@
   "name": "homebridge-aiper",
   "displayName": "Aiper",
   "type": "module",
-  "version": "1.0.7",
+  "version": "1.0.13",
   "private": true,
   "description": "Lets you use Aiper functions from thier App",
   "author": "Jagger Hannah",

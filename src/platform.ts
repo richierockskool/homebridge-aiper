@@ -15,7 +15,7 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 interface AiperDevice {
   uniqueId: string;
   displayName: string;
-  mode: 'Smart' | 'Floor' | 'Wall' | 'Waterline';
+  mode: 'Main';
   serialNumber: string;
 }
 
@@ -56,6 +56,8 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
           await this.aiperClient.getOpenIdToken();
           await this.aiperClient.getAwsCredentials();
           await this.aiperClient.connectMqtt();
+          await this.aiperClient.subscribeToRobot();
+
           this.log.info('Aiper device check complete. Loading HomeKit accessories...');
           this.discoverDevices();
         })
@@ -77,31 +79,12 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
 
     const aiperDevices: AiperDevice[] = [
       {
-        uniqueId: 'aiper-scuba-n1-max-smart',
-        displayName: 'Scuba N1 Max Smart',
-        mode: 'Smart',
-        serialNumber: 'T1D55200156',
-      },
-      {
-        uniqueId: 'aiper-scuba-n1-max-floor',
-        displayName: 'Scuba N1 Max Floor',
-        mode: 'Floor',
-        serialNumber: 'T1D55200156',
-      },
-      {
-        uniqueId: 'aiper-scuba-n1-max-wall',
-        displayName: 'Scuba N1 Max Wall',
-        mode: 'Wall',
-        serialNumber: 'T1D55200156',
-      },
-      {
-        uniqueId: 'aiper-scuba-n1-max-waterline',
-        displayName: 'Scuba N1 Max Waterline',
-        mode: 'Waterline',
+        uniqueId: 'aiper-scuba-n1-max-main',
+        displayName: 'Scuba N1 Max',
+        mode: 'Main',
         serialNumber: 'T1D55200156',
       },
     ];
-
     for (const device of aiperDevices) {
       const uuid = this.api.hap.uuid.generate(device.uniqueId);
       const existingAccessory = this.accessories.get(uuid);
