@@ -24,9 +24,9 @@
       }
     },
     "required": [
+      "name",
       "email",
-      "password",
-      "deviceId"
+      "password"
     ]
   }
 }
