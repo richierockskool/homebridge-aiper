@@ -117,7 +117,6 @@ export class ExamplePlatformAccessory {
         .ProgrammableSwitchEvent.SINGLE_PRESS,
     );
   }
-
   private setupBatteryAccessory(): void {
     this.batteryService =
       this.accessory.getService(this.platform.Service.Battery) ||
