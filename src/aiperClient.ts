@@ -9,7 +9,15 @@ export interface AiperClientConfig {
   password?: string;
   deviceId?: string;
 }
-
+export interface AiperStateUpdate {
+  status: number;
+  mode: number;
+  battery: number;
+  warning: number;
+  inWater: number;
+  online: boolean;
+  wifiConnected: boolean;
+}
 export class AiperClient {
 
   private readonly crypto = new AiperCrypto();
@@ -34,6 +42,15 @@ export class AiperClient {
   public latestMode = 0;
   public latestWarn = 0;
   public latestInWater = 0;
+  public latestOnline = true;
+  public latestWifiConnected = true;
+
+  private hasObservedCleaningCycle = false;
+  private disconnectedDuringCycle = false;
+  private completionSentForCurrentCycle = false;
+
+  private readonly cycleCompleteListeners = new Set<() => void>();
+  private readonly stateUpdateListeners = new Set<(state: AiperStateUpdate) => void>();
 
   constructor(
     private readonly config: AiperClientConfig,
@@ -319,44 +336,213 @@ export class AiperClient {
       this.log.info(`Aiper subscribed to ${topic}`);
     }
   }
+  public onCycleComplete(listener: () => void): () => void {
+    this.cycleCompleteListeners.add(listener);
+
+    return () => {
+      this.cycleCompleteListeners.delete(listener);
+    };
+  }
+
+  public onStateUpdate(listener: (state: AiperStateUpdate) => void): () => void {
+    this.stateUpdateListeners.add(listener);
+
+    return () => {
+      this.stateUpdateListeners.delete(listener);
+    };
+  }
+
+  private emitStateUpdate(): void {
+    const state: AiperStateUpdate = {
+      status: this.latestStatus,
+      mode: this.latestMode,
+      battery: this.latestBattery,
+      warning: this.latestWarn,
+      inWater: this.latestInWater,
+      online: this.latestOnline,
+      wifiConnected: this.latestWifiConnected,
+    };
+
+    for (const listener of this.stateUpdateListeners) {
+      try {
+        listener(state);
+      } catch (error) {
+        this.log.error(
+          `Aiper state listener failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  private emitCycleComplete(): void {
+    this.log.info('Aiper cleaning cycle complete: sending HomeKit notification.');
+
+    for (const listener of this.cycleCompleteListeners) {
+      try {
+        listener();
+      } catch (error) {
+        this.log.error(
+          `Aiper cycle-complete listener failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  private evaluateCycleState(): void {
+    /*
+     * We currently treat a non-zero status while the cleaner is in the
+     * water as evidence that a real cleaning cycle has been active.
+     *
+     * Completion requires:
+     * 1. A cleaning cycle was previously observed.
+     * 2. The cleaner disconnected during that cycle.
+     * 3. Wi-Fi has reconnected.
+     * 4. The machine is stopped.
+     * 5. The cleaner still reports that it is in the water/waterline.
+     */
+
+    const cleanerIsInWater = this.latestInWater !== 0;
+    const cleanerIsRunning = this.latestStatus !== 0;
+    const cleanerIsStopped = this.latestStatus === 0;
+    const connected = this.latestOnline && this.latestWifiConnected;
+
+    if (cleanerIsRunning && cleanerIsInWater) {
+      if (!this.hasObservedCleaningCycle) {
+        this.log.info('Aiper cleaning cycle detected.');
+      }
+
+      this.hasObservedCleaningCycle = true;
+      this.completionSentForCurrentCycle = false;
+    }
+
+    if (this.hasObservedCleaningCycle && !connected) {
+      if (!this.disconnectedDuringCycle) {
+        this.log.info('Aiper disconnected during cleaning cycle.');
+      }
+
+      this.disconnectedDuringCycle = true;
+    }
+
+    const cycleFinished =
+      this.hasObservedCleaningCycle &&
+      this.disconnectedDuringCycle &&
+      connected &&
+      cleanerIsStopped &&
+      cleanerIsInWater &&
+      !this.completionSentForCurrentCycle;
+
+    if (!cycleFinished) {
+      return;
+    }
+
+    this.completionSentForCurrentCycle = true;
+    this.hasObservedCleaningCycle = false;
+    this.disconnectedDuringCycle = false;
+
+    this.emitCycleComplete();
+  }
   private handleIncomingMqtt(topic: string, message: string): void {
     try {
       const payload = JSON.parse(message);
 
       const machine = payload?.state?.reported?.Machine;
-      if (machine && machine.status !== undefined && machine.mode !== undefined && machine.cap !== undefined) {
-        const status = machine.status;
-        const mode = machine.mode;
-        const battery = machine.cap;
-        const warn = machine.warn ?? machine.warn_code;
-        const inWater = machine.in_water;
-        this.latestStatus = machine.status;
-        this.latestMode = machine.mode;
-        this.latestBattery = machine.cap;
-        this.latestWarn = machine.warn ?? machine.warn_code ?? 0;
-        this.latestInWater = machine.in_water ?? 0;
+
+      if (machine) {
+        if (machine.status !== undefined) {
+          this.latestStatus = Number(machine.status);
+        }
+
+        if (machine.mode !== undefined) {
+          this.latestMode = Number(machine.mode);
+        }
+
+        if (machine.cap !== undefined) {
+          this.latestBattery = Number(machine.cap);
+        }
+
+        if (machine.warn !== undefined || machine.warn_code !== undefined) {
+          this.latestWarn = Number(machine.warn ?? machine.warn_code ?? 0);
+        }
+
+        if (machine.in_water !== undefined) {
+          this.latestInWater = Number(machine.in_water);
+        }
 
         this.log.info(
-          `Aiper status update: status=${status} mode=${mode} battery=${battery}% warn=${warn} inWater=${inWater}`,
+          `Aiper status update: status=${this.latestStatus} ` +
+          `mode=${this.latestMode} ` +
+          `battery=${this.latestBattery}% ` +
+          `warn=${this.latestWarn} ` +
+          `inWater=${this.latestInWater}`,
         );
 
-        return;
+        this.emitStateUpdate();
+        this.evaluateCycleState();
       }
 
       const netStat = payload?.state?.reported?.NetStat;
+
       if (netStat) {
-        this.log.info(`Aiper network update: online=${netStat.online} ble=${netStat.ble} wifi=${netStat.sta}`);
-        return;
+        this.latestOnline = this.normaliseConnectionValue(netStat.online);
+        this.latestWifiConnected = this.normaliseConnectionValue(netStat.sta);
+
+        this.log.info(
+          `Aiper network update: online=${netStat.online} ` +
+          `ble=${netStat.ble} ` +
+          `wifi=${netStat.sta}`,
+        );
+
+        this.emitStateUpdate();
+        this.evaluateCycleState();
       }
 
       const data = payload?.data;
+
       if (payload?.type === 'DevInfoReport' && data) {
-        this.log.info(`Aiper device info: model=${data.model} ip=${data.ip} ble=${data.bleName}`);
-        return;
+        this.log.info(
+          `Aiper device info: model=${data.model} ip=${data.ip} ble=${data.bleName}`,
+        );
       }
-    } catch {
-    // ignore parse noise
+    } catch (error) {
+      this.log.debug(
+        `Ignored unrecognised MQTT message on ${topic}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
+  }
+
+  private normaliseConnectionValue(value: unknown): boolean {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      return value !== 0;
+    }
+
+    if (typeof value === 'string') {
+      const normalised = value.trim().toLowerCase();
+
+      return ![
+        '',
+        '0',
+        'false',
+        'offline',
+        'disconnected',
+        'none',
+      ].includes(normalised);
+    }
+
+    /*
+     * Do not mark the robot offline merely because Aiper omitted a field
+     * from one partial shadow update.
+     */
+    return true;
   }
   private async sendMachineAt(atCommand: string): Promise<void> {
     if (!this.mqttConnection || !this.mqttConnected) {
