@@ -96,7 +96,7 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
       },
       {
         uniqueId: 'aiper-scuba-n1-max-cycle-complete',
-        displayName: 'Aiper Cycle Complete',
+        displayName: 'Aiper Has Finished the Job',
         mode: 'CycleComplete',
         serialNumber: this.config.deviceId ?? 'Unknown',
       },

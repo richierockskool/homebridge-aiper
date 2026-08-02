@@ -545,12 +545,17 @@ export class AiperClient {
   }
   private handleIncomingMqtt(topic: string, message: string): void {
     try {
-      const payload = JSON.parse(message);
+      const payload: unknown = JSON.parse(message);
+
+      /*
+     * Aiper may send usable state through either its own shadow/report
+     * topic or an AWS shadow topic. Pass every parsed payload through
+     * the same safe state parser.
+     */
+      this.handleShadowMessage(payload);
 
       if (topic.includes('upChan')) {
         this.handleUpChanMessage(payload);
-      } else if (topic.includes('shadow/report') || topic.includes('shadow/accepted') || topic.includes('shadow/delta')) {
-        this.handleShadowMessage(payload);
       }
     } catch (error) {
       this.log.warn(
@@ -574,82 +579,198 @@ export class AiperClient {
       return;
     }
 
-    const typedPayload = payload as {
+  type MachineState = {
+    status?: unknown;
+    mode?: unknown;
+    cap?: unknown;
+    battery?: unknown;
+    warn?: unknown;
+    warn_code?: unknown;
+    in_water?: unknown;
+    inWater?: unknown;
+  };
+
+  type NetworkState = {
+    online?: unknown;
+    sta?: unknown;
+    wifiConnected?: unknown;
+    ble?: unknown;
+  };
+
+  type ReportedState = {
+    Machine?: MachineState;
+    NetStat?: NetworkState;
+
+    /*
+     * Flat fields are retained as a fallback in case another Aiper
+     * model or firmware reports a different shadow structure.
+     */
+    status?: unknown;
+    mode?: unknown;
+    cap?: unknown;
+    battery?: unknown;
+    warn?: unknown;
+    warn_code?: unknown;
+    in_water?: unknown;
+    inWater?: unknown;
+    online?: unknown;
+    sta?: unknown;
+    wifiConnected?: unknown;
+  };
+
+  const typedPayload = payload as {
     state?: {
-      reported?: {
-        battery?: number;
-        status?: number;
-        mode?: number;
-        warn?: number;
-        inWater?: number;
-        online?: boolean;
-        wifiConnected?: boolean;
-      };
-      battery?: number;
-      status?: number;
-      mode?: number;
-      warn?: number;
-      inWater?: number;
-      online?: boolean;
-      wifiConnected?: boolean;
+      reported?: ReportedState;
+      desired?: ReportedState;
+      delta?: ReportedState;
+      Machine?: MachineState;
+      NetStat?: NetworkState;
     };
   };
 
-    const state =
+  const reported: ReportedState | undefined =
     typedPayload.state?.reported ??
+    typedPayload.state?.delta ??
     typedPayload.state;
 
-    if (!state) {
-      return;
-    }
+  if (!reported) {
+    return;
+  }
 
-    let stateChanged = false;
+  const machine: MachineState =
+    reported.Machine ?? reported;
 
-    if (typeof state.battery === 'number' && state.battery !== this.latestBattery) {
-      this.latestBattery = state.battery;
-      stateChanged = true;
-    }
+  const network: NetworkState =
+    reported.NetStat ?? reported;
 
-    if (typeof state.status === 'number' && state.status !== this.latestStatus) {
-      this.latestStatus = state.status;
-      stateChanged = true;
-    }
+  let stateChanged = false;
 
-    if (typeof state.mode === 'number' && state.mode !== this.latestMode) {
-      this.latestMode = state.mode;
-      stateChanged = true;
-    }
+  const status = this.numberFromUnknown(machine.status);
 
-    if (typeof state.warn === 'number' && state.warn !== this.latestWarn) {
-      this.latestWarn = state.warn;
-      stateChanged = true;
-    }
+  if (
+    status !== undefined &&
+    status !== this.latestStatus
+  ) {
+    this.latestStatus = status;
+    stateChanged = true;
+  }
 
-    if (typeof state.inWater === 'number' && state.inWater !== this.latestInWater) {
-      this.latestInWater = state.inWater;
-      stateChanged = true;
-    }
+  const mode = this.numberFromUnknown(machine.mode);
 
-    const online = this.normaliseConnectionValue(state.online);
+  if (
+    mode !== undefined &&
+    mode !== this.latestMode
+  ) {
+    this.latestMode = mode;
+    stateChanged = true;
+  }
+
+  const battery = this.numberFromUnknown(
+    machine.cap ?? machine.battery,
+  );
+
+  if (
+    battery !== undefined &&
+    battery !== this.latestBattery
+  ) {
+    this.latestBattery = battery;
+    stateChanged = true;
+  }
+
+  const warning = this.numberFromUnknown(
+    machine.warn ?? machine.warn_code,
+  );
+
+  if (
+    warning !== undefined &&
+    warning !== this.latestWarn
+  ) {
+    this.latestWarn = warning;
+    stateChanged = true;
+  }
+
+  const inWater = this.numberFromUnknown(
+    machine.in_water ?? machine.inWater,
+  );
+
+  if (
+    inWater !== undefined &&
+    inWater !== this.latestInWater
+  ) {
+    this.latestInWater = inWater;
+    stateChanged = true;
+  }
+
+  if (network.online !== undefined) {
+    const online =
+      this.normaliseConnectionValue(network.online);
 
     if (online !== this.latestOnline) {
       this.latestOnline = online;
       stateChanged = true;
     }
+  }
 
-    const wifiConnected = this.normaliseConnectionValue(state.wifiConnected);
+  const wifiValue =
+    network.sta ??
+    network.wifiConnected;
 
-    if (wifiConnected !== this.latestWifiConnected) {
+  if (wifiValue !== undefined) {
+    const wifiConnected =
+      this.normaliseConnectionValue(wifiValue);
+
+    if (
+      wifiConnected !== this.latestWifiConnected
+    ) {
       this.latestWifiConnected = wifiConnected;
       stateChanged = true;
     }
-
-    if (stateChanged) {
-      this.evaluateCycleState();
-      this.emitStateUpdate();
-    }
   }
 
+  /*
+   * Log every valid Machine or NetStat report, even where the value did
+   * not change. This will reveal the real Aiper status sequence at the
+   * end of a cleaning cycle.
+   */
+  if (reported.Machine || reported.NetStat) {
+    this.log.info(
+      `Aiper state: status=${this.latestStatus} ` +
+      `mode=${this.latestMode} ` +
+      `battery=${this.latestBattery}% ` +
+      `warn=${this.latestWarn} ` +
+      `inWater=${this.latestInWater} ` +
+      `online=${this.latestOnline} ` +
+      `wifi=${this.latestWifiConnected}`,
+    );
+  }
+
+  if (stateChanged) {
+    this.emitStateUpdate();
+    this.evaluateCycleState();
+  }
+  }
+  private numberFromUnknown(
+    value: unknown,
+  ): number | undefined {
+    if (typeof value === 'number') {
+      return Number.isFinite(value)
+        ? value
+        : undefined;
+    }
+
+    if (
+      typeof value === 'string' &&
+    value.trim() !== ''
+    ) {
+      const parsed = Number(value);
+
+      return Number.isFinite(parsed)
+        ? parsed
+        : undefined;
+    }
+
+    return undefined;
+  }
   private normaliseConnectionValue(value: unknown): boolean {
     if (typeof value === 'boolean') {
       return value;

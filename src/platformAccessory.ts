@@ -83,7 +83,7 @@ export class ExamplePlatformAccessory {
   }
 
   private setupCycleCompleteDoorbell(): void {
-    const serviceName = 'Aiper Cycle Complete';
+    const serviceName = 'Aiper Has Finished the Job';
 
     this.cycleCompleteDoorbell =
     this.accessory.getService(this.platform.Service.Doorbell) ??
@@ -148,7 +148,7 @@ export class ExamplePlatformAccessory {
     }
 
     this.platform.log.info(
-      'Aiper cleaner is waiting at the waterline. Sending HomeKit notification.',
+      'Aiper has finished the job and is waiting at the waterline. Sending HomeKit notification.',
     );
 
     this.cycleCompleteDoorbell.updateCharacteristic(
