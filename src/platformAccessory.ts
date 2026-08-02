@@ -15,6 +15,7 @@ export class ExamplePlatformAccessory {
   private waterlineService?: Service;
   private batteryService?: Service;
   private cycleCompleteDoorbell?: Service;
+  private mayBeStuckDoorbell?: Service;
 
   private activeMode?: AiperMode;
 
@@ -68,6 +69,7 @@ export class ExamplePlatformAccessory {
     );
 
     this.setupCycleCompleteDoorbell();
+    this.setupMayBeStuckDoorbell();
   }
 
   private setupCycleCompleteDoorbell(): void {
@@ -98,6 +100,34 @@ export class ExamplePlatformAccessory {
       'Aiper cycle-complete HomeKit doorbell loaded.',
     );
   }
+  private setupMayBeStuckDoorbell(): void {
+    const serviceName = 'Aiper May Be Stuck';
+    const subtype = 'aiper-may-be-stuck';
+
+    this.mayBeStuckDoorbell =
+    this.accessory.getServiceById(
+      this.platform.Service.Doorbell,
+      subtype,
+    ) ??
+    this.accessory.addService(
+      this.platform.Service.Doorbell,
+      serviceName,
+      subtype,
+    );
+
+    this.mayBeStuckDoorbell.setCharacteristic(
+      this.platform.Characteristic.Name,
+      serviceName,
+    );
+
+    this.platform.aiperClient.onMayBeStuck(() => {
+      this.ringMayBeStuckDoorbell();
+    });
+
+    this.platform.log.info(
+      'Aiper may-be-stuck HomeKit doorbell loaded.',
+    );
+  }
 
   private ringCycleCompleteDoorbell(): void {
     if (!this.cycleCompleteDoorbell) {
@@ -112,6 +142,24 @@ export class ExamplePlatformAccessory {
     );
 
     this.cycleCompleteDoorbell.updateCharacteristic(
+      this.platform.Characteristic.ProgrammableSwitchEvent,
+      this.platform.Characteristic
+        .ProgrammableSwitchEvent.SINGLE_PRESS,
+    );
+  }
+  private ringMayBeStuckDoorbell(): void {
+    if (!this.mayBeStuckDoorbell) {
+      this.platform.log.warn(
+        'Aiper may-be-stuck doorbell service is unavailable.',
+      );
+      return;
+    }
+
+    this.platform.log.warn(
+      'Aiper has not returned after 3 hours 15 minutes. Sending HomeKit warning.',
+    );
+
+    this.mayBeStuckDoorbell.updateCharacteristic(
       this.platform.Characteristic.ProgrammableSwitchEvent,
       this.platform.Characteristic
         .ProgrammableSwitchEvent.SINGLE_PRESS,
