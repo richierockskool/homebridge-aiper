@@ -50,10 +50,22 @@ export class ExamplePlatformAccessory {
         displayName,
       );
 
-    if (mode === 'Battery') {
+    switch (mode) {
+    case 'Battery':
       this.setupBatteryAccessory();
-    } else {
+      break;
+
+    case 'CycleComplete':
+      this.setupCycleCompleteDoorbell();
+      break;
+
+    case 'MayBeStuck':
+      this.setupMayBeStuckDoorbell();
+      break;
+
+    default:
       this.setupControlsAccessory();
+      break;
     }
 
     this.platform.log.info('Loaded Aiper accessory:', displayName);
@@ -68,29 +80,27 @@ export class ExamplePlatformAccessory {
       'waterline',
     );
 
-    this.setupCycleCompleteDoorbell();
-    this.setupMayBeStuckDoorbell();
   }
 
   private setupCycleCompleteDoorbell(): void {
     const serviceName = 'Aiper Cycle Complete';
-    const subtype = 'aiper-cycle-complete';
 
     this.cycleCompleteDoorbell =
-      this.accessory.getServiceById(
-        this.platform.Service.Doorbell,
-        subtype,
-      ) ??
-      this.accessory.addService(
-        this.platform.Service.Doorbell,
-        serviceName,
-        subtype,
-      );
-
-    this.cycleCompleteDoorbell.setCharacteristic(
-      this.platform.Characteristic.Name,
+    this.accessory.getService(this.platform.Service.Doorbell) ??
+    this.accessory.addService(
+      this.platform.Service.Doorbell,
       serviceName,
     );
+
+    this.cycleCompleteDoorbell
+      .setCharacteristic(
+        this.platform.Characteristic.Name,
+        serviceName,
+      )
+      .setCharacteristic(
+        this.platform.Characteristic.ConfiguredName,
+        serviceName,
+      );
 
     this.platform.aiperClient.onCycleComplete(() => {
       this.ringCycleCompleteDoorbell();
@@ -102,23 +112,23 @@ export class ExamplePlatformAccessory {
   }
   private setupMayBeStuckDoorbell(): void {
     const serviceName = 'Aiper May Be Stuck';
-    const subtype = 'aiper-may-be-stuck';
 
     this.mayBeStuckDoorbell =
-    this.accessory.getServiceById(
-      this.platform.Service.Doorbell,
-      subtype,
-    ) ??
+    this.accessory.getService(this.platform.Service.Doorbell) ??
     this.accessory.addService(
       this.platform.Service.Doorbell,
       serviceName,
-      subtype,
     );
 
-    this.mayBeStuckDoorbell.setCharacteristic(
-      this.platform.Characteristic.Name,
-      serviceName,
-    );
+    this.mayBeStuckDoorbell
+      .setCharacteristic(
+        this.platform.Characteristic.Name,
+        serviceName,
+      )
+      .setCharacteristic(
+        this.platform.Characteristic.ConfiguredName,
+        serviceName,
+      );
 
     this.platform.aiperClient.onMayBeStuck(() => {
       this.ringMayBeStuckDoorbell();
