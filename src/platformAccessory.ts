@@ -220,6 +220,34 @@ export class ExamplePlatformAccessory {
             .NOT_CHARGING,
       );
 
+    this.platform.aiperClient.onStateUpdate(state => {
+      if (!this.batteryService) {
+        return;
+      }
+
+      const batteryLevel = Math.max(
+        0,
+        Math.min(100, state.battery),
+      );
+
+      this.batteryService.updateCharacteristic(
+        this.platform.Characteristic.BatteryLevel,
+        batteryLevel,
+      );
+
+      this.batteryService.updateCharacteristic(
+        this.platform.Characteristic.StatusLowBattery,
+        batteryLevel <= 20
+          ? this.platform.Characteristic.StatusLowBattery
+            .BATTERY_LEVEL_LOW
+          : this.platform.Characteristic.StatusLowBattery
+            .BATTERY_LEVEL_NORMAL,
+      );
+
+      this.platform.log.info(
+        `Aiper HomeKit battery updated: ${batteryLevel}%`,
+      );
+    });  
     this.batteryService.updateCharacteristic(
       this.platform.Characteristic.BatteryLevel,
       this.platform.aiperClient.latestBattery,

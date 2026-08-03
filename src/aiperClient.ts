@@ -500,7 +500,7 @@ export class AiperClient {
 
     const cleanerIsInWater = this.latestInWater !== 0;
     const cleanerIsRunning = this.latestStatus !== 0;
-    const cleanerIsStopped = this.latestStatus === 0;
+    
 
     const connected =
     this.latestOnline &&
@@ -518,15 +518,14 @@ export class AiperClient {
       this.disconnectedDuringCycle = true;
     }
 
-    const cycleFinished =
-    this.hasObservedCleaningCycle &&
-    this.disconnectedDuringCycle &&
-    connected &&
-    cleanerIsStopped &&
-    cleanerIsInWater &&
-    !this.completionSentForCurrentCycle;
+    const returnedAtWaterline =
+  this.hasObservedCleaningCycle &&
+  this.disconnectedDuringCycle &&
+  connected &&
+  cleanerIsInWater &&
+  !this.completionSentForCurrentCycle;
 
-    if (!cycleFinished) {
+    if (!returnedAtWaterline) {
       return;
     }
 
@@ -543,40 +542,165 @@ export class AiperClient {
     this.disconnectedDuringCycle = false;
     this.stuckNotificationSentForCurrentCycle = false;
   }
-  private handleIncomingMqtt(topic: string, message: string): void {
+  private handleIncomingMqtt(
+    topic: string,
+    message: string,
+  ): void {
     try {
       const payload: unknown = JSON.parse(message);
 
-      /*
-     * Aiper may send usable state through either its own shadow/report
-     * topic or an AWS shadow topic. Pass every parsed payload through
-     * the same safe state parser.
-     */
+      this.log.debug(
+        `Aiper MQTT received on ${topic}: ${message}`,
+      );
+
+      const handledUpChan =
+      topic.includes('upChan') &&
+      this.handleUpChanMessage(payload);
+
+      const handledShadow =
       this.handleShadowMessage(payload);
 
-      if (topic.includes('upChan')) {
-        this.handleUpChanMessage(payload);
+      if (!handledUpChan && !handledShadow) {
+        this.log.debug(
+          `Aiper MQTT message contained no recognised state on ${topic}.`,
+        );
       }
     } catch (error) {
       this.log.warn(
         `Aiper MQTT message parse failed on ${topic}: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : String(error)
         }`,
       );
     }
   }
 
-  private handleUpChanMessage(payload: unknown): void {
-    // Handle upChan messages from device
-    this.log.debug(`Aiper upChan message received: ${JSON.stringify(payload)}`);
-  }
-
-  private handleShadowMessage(payload: unknown): void {
+  private handleUpChanMessage(
+    payload: unknown,
+  ): boolean {
     if (
       typeof payload !== 'object' ||
     payload === null
     ) {
-      return;
+      return false;
+    }
+
+    const typedPayload = payload as {
+    type?: unknown;
+    data?: {
+      status?: unknown;
+      mode?: unknown;
+      cap?: unknown;
+      battery?: unknown;
+      warn?: unknown;
+      warn_code?: unknown;
+      in_water?: unknown;
+      inWater?: unknown;
+      online?: unknown;
+      sta?: unknown;
+      wifiConnected?: unknown;
+    };
+  };
+
+    if (
+      typedPayload.type !== 'Machine' ||
+    !typedPayload.data
+    ) {
+      return false;
+    }
+
+    const data = typedPayload.data;
+    let recognised = false;
+
+    const status =
+    this.numberFromUnknown(data.status);
+
+    if (status !== undefined) {
+      this.latestStatus = status;
+      recognised = true;
+    }
+
+    const mode =
+    this.numberFromUnknown(data.mode);
+
+    if (mode !== undefined) {
+      this.latestMode = mode;
+      recognised = true;
+    }
+
+    const battery = this.numberFromUnknown(
+      data.cap ?? data.battery,
+    );
+
+    if (battery !== undefined) {
+      this.latestBattery = battery;
+      recognised = true;
+    }
+
+    const warning = this.numberFromUnknown(
+      data.warn ?? data.warn_code,
+    );
+
+    if (warning !== undefined) {
+      this.latestWarn = warning;
+      recognised = true;
+    }
+
+    const inWater = this.numberFromUnknown(
+      data.in_water ?? data.inWater,
+    );
+
+    if (inWater !== undefined) {
+      this.latestInWater = inWater;
+      recognised = true;
+    }
+
+    if (data.online !== undefined) {
+      this.latestOnline =
+      this.normaliseConnectionValue(data.online);
+
+      recognised = true;
+    }
+
+    const wifiValue =
+    data.sta ??
+    data.wifiConnected;
+
+    if (wifiValue !== undefined) {
+      this.latestWifiConnected =
+      this.normaliseConnectionValue(wifiValue);
+
+      recognised = true;
+    }
+
+    if (!recognised) {
+      return false;
+    }
+
+    this.log.info(
+      'Aiper upChan state: ' +
+    `status=${this.latestStatus} ` +
+    `mode=${this.latestMode} ` +
+    `battery=${this.latestBattery}% ` +
+    `warn=${this.latestWarn} ` +
+    `inWater=${this.latestInWater} ` +
+    `online=${this.latestOnline} ` +
+    `wifi=${this.latestWifiConnected}`,
+    );
+
+    this.emitStateUpdate();
+    this.evaluateCycleState();
+
+    return true;
+  }
+
+  private handleShadowMessage(payload: unknown): boolean {
+    if (
+      typeof payload !== 'object' ||
+    payload === null
+    ) {
+      return false;
     }
 
   type MachineState = {
@@ -634,7 +758,7 @@ export class AiperClient {
     typedPayload.state;
 
   if (!reported) {
-    return;
+    return false;
   }
 
   const machine: MachineState =
@@ -643,7 +767,7 @@ export class AiperClient {
   const network: NetworkState =
     reported.NetStat ?? reported;
 
-  let stateChanged = false;
+  
 
   const status = this.numberFromUnknown(machine.status);
 
@@ -652,7 +776,7 @@ export class AiperClient {
     status !== this.latestStatus
   ) {
     this.latestStatus = status;
-    stateChanged = true;
+    
   }
 
   const mode = this.numberFromUnknown(machine.mode);
@@ -662,7 +786,7 @@ export class AiperClient {
     mode !== this.latestMode
   ) {
     this.latestMode = mode;
-    stateChanged = true;
+    
   }
 
   const battery = this.numberFromUnknown(
@@ -674,7 +798,7 @@ export class AiperClient {
     battery !== this.latestBattery
   ) {
     this.latestBattery = battery;
-    stateChanged = true;
+    
   }
 
   const warning = this.numberFromUnknown(
@@ -686,7 +810,7 @@ export class AiperClient {
     warning !== this.latestWarn
   ) {
     this.latestWarn = warning;
-    stateChanged = true;
+    
   }
 
   const inWater = this.numberFromUnknown(
@@ -698,7 +822,7 @@ export class AiperClient {
     inWater !== this.latestInWater
   ) {
     this.latestInWater = inWater;
-    stateChanged = true;
+   
   }
 
   if (network.online !== undefined) {
@@ -707,7 +831,7 @@ export class AiperClient {
 
     if (online !== this.latestOnline) {
       this.latestOnline = online;
-      stateChanged = true;
+     
     }
   }
 
@@ -723,7 +847,7 @@ export class AiperClient {
       wifiConnected !== this.latestWifiConnected
     ) {
       this.latestWifiConnected = wifiConnected;
-      stateChanged = true;
+     
     }
   }
 
@@ -744,11 +868,32 @@ export class AiperClient {
     );
   }
 
-  if (stateChanged) {
-    this.emitStateUpdate();
-    this.evaluateCycleState();
+  const recognisedState =
+  reported.Machine !== undefined ||
+  reported.NetStat !== undefined ||
+  status !== undefined ||
+  mode !== undefined ||
+  battery !== undefined ||
+  warning !== undefined ||
+  inWater !== undefined ||
+  network.online !== undefined ||
+  wifiValue !== undefined;
+
+  if (!recognisedState) {
+    return false;
   }
+
+  /*
+ * Always evaluate recognised reports. A completion message can repeat
+ * existing values, so requiring stateChanged could suppress the event.
+ */
+  this.emitStateUpdate();
+  this.evaluateCycleState();
+
+  return true;
   }
+  
+
   private numberFromUnknown(
     value: unknown,
   ): number | undefined {
