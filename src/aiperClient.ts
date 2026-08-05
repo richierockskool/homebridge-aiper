@@ -51,7 +51,8 @@ export class AiperClient {
   private stuckNotificationSentForCurrentCycle = false;
 
   private cycleTimeout?: ReturnType<typeof setTimeout>;
-
+  private cycleStartedAt = 0;
+  private lastRecognisedStateAt = 0;
   private readonly cycleTimeoutMilliseconds =
     (3 * 60 * 60 * 1000) +
   (15 * 60 * 1000);
@@ -431,6 +432,7 @@ export class AiperClient {
     }
 
     this.hasObservedCleaningCycle = true;
+    this.cycleStartedAt = Date.now();
 
     /*
    * The cleaner normally loses Wi-Fi after entering the pool.
@@ -451,16 +453,43 @@ export class AiperClient {
   }
 
   private startCycleTimeout(): void {
-    this.clearCycleTimeout();
-
     this.cycleTimeout = setTimeout(() => {
       this.cycleTimeout = undefined;
 
       if (
         !this.hasObservedCleaningCycle ||
-      this.completionSentForCurrentCycle ||
-      this.stuckNotificationSentForCurrentCycle
+    this.completionSentForCurrentCycle ||
+    this.stuckNotificationSentForCurrentCycle
       ) {
+        return;
+      }
+
+      const cleanerIsInWater =
+    this.latestInWater !== 0;
+
+      const connected =
+    this.latestOnline &&
+    this.latestWifiConnected;
+
+      const stateIsRecent =
+    this.lastRecognisedStateAt > 0 &&
+    Date.now() - this.lastRecognisedStateAt <
+      15 * 60 * 1000;
+
+      /*
+   * Do not issue a stuck warning when a recent report proves that the
+   * cleaner is already online and out of the pool, such as when it has
+   * been retrieved and returned to the charger.
+   */
+      if (
+        stateIsRecent &&
+    connected &&
+    !cleanerIsInWater
+      ) {
+        this.resetCleaningCycle(
+          'timeout reached but robot is online and out of the water',
+        );
+
         return;
       }
 
@@ -485,45 +514,79 @@ export class AiperClient {
     this.disconnectedDuringCycle = false;
     this.completionSentForCurrentCycle = false;
     this.stuckNotificationSentForCurrentCycle = false;
+    this.cycleStartedAt = 0;
 
     this.log.info(`Aiper cleaning-cycle tracking reset: ${reason}.`);
   }
 
   private evaluateCycleState(): void {
-  /*
-   * Until we confirm Aiper's complete status table, this retains the
-   * currently observed interpretation:
-   *
-   * status !== 0 = operating
-   * status === 0 = stopped
-   */
-
     const cleanerIsInWater = this.latestInWater !== 0;
     const cleanerIsRunning = this.latestStatus !== 0;
-    
 
     const connected =
     this.latestOnline &&
     this.latestWifiConnected;
 
+    const cycleAge =
+    this.cycleStartedAt > 0
+      ? Date.now() - this.cycleStartedAt
+      : 0;
+
+    const launchGracePeriodMilliseconds =
+    10 * 60 * 1000;
+
     /*
-   * This also catches a cycle started from the Aiper app rather than
-   * from a HomeKit switch.
+   * This catches a cycle started through the Aiper app instead of
+   * through HomeKit, but only after an actual in-water operating state
+   * has been reported.
    */
-    if (cleanerIsRunning && cleanerIsInWater) {
-      this.beginCleaningCycle('MQTT operating state');
+    if (
+      !this.hasObservedCleaningCycle &&
+    cleanerIsRunning &&
+    cleanerIsInWater
+    ) {
+      this.beginCleaningCycle(
+        'confirmed MQTT in-water operating state',
+      );
     }
 
-    if (this.hasObservedCleaningCycle && !connected) {
+    if (!this.hasObservedCleaningCycle) {
+      return;
+    }
+
+    if (!connected) {
       this.disconnectedDuringCycle = true;
+      return;
     }
 
+    /*
+   * Ignore the normal short period between selecting a mode and placing
+   * the cleaner in the pool. After ten minutes, an online robot reporting
+   * inWater=0 is considered retrieved, docked, or back on the charger.
+   */
+    if (
+      !cleanerIsInWater &&
+    cycleAge >= launchGracePeriodMilliseconds
+    ) {
+      this.resetCleaningCycle(
+        'robot is online and out of the water',
+      );
+
+      return;
+    }
+
+    /*
+   * Completion for models that return to the waterline:
+   * - a cycle was active;
+   * - the cleaner was away/offline;
+   * - it has reconnected;
+   * - it still reports being in the water.
+   */
     const returnedAtWaterline =
-  this.hasObservedCleaningCycle &&
-  this.disconnectedDuringCycle &&
-  connected &&
-  cleanerIsInWater &&
-  !this.completionSentForCurrentCycle;
+    this.disconnectedDuringCycle &&
+    connected &&
+    cleanerIsInWater &&
+    !this.completionSentForCurrentCycle;
 
     if (!returnedAtWaterline) {
       return;
@@ -533,7 +596,7 @@ export class AiperClient {
     this.clearCycleTimeout();
 
     this.log.info(
-      'Aiper returned to Wi-Fi stopped and in the water. Cycle completion confirmed.',
+      'Aiper returned to Wi-Fi at the waterline. Cycle completion confirmed.',
     );
 
     this.emitCycleComplete();
@@ -541,6 +604,7 @@ export class AiperClient {
     this.hasObservedCleaningCycle = false;
     this.disconnectedDuringCycle = false;
     this.stuckNotificationSentForCurrentCycle = false;
+    this.cycleStartedAt = 0;
   }
   private handleIncomingMqtt(
     topic: string,
