@@ -148,14 +148,37 @@ export class ExamplePlatformAccessory {
     }
 
     this.platform.log.info(
-      'Aiper has finished the job and is waiting at the waterline. Sending HomeKit notification.',
+      'Aiper has finished the job and is waiting at the waterline. Sending 3 HomeKit doorbell rings.',
     );
 
-    this.cycleCompleteDoorbell.updateCharacteristic(
-      this.platform.Characteristic.ProgrammableSwitchEvent,
-      this.platform.Characteristic
-        .ProgrammableSwitchEvent.SINGLE_PRESS,
-    );
+    const ringDoorbell = (ringNumber: number): void => {
+      if (!this.cycleCompleteDoorbell) {
+        return;
+      }
+
+      this.platform.log.info(
+        `Aiper cycle-complete doorbell ring ${ringNumber} of 3.`,
+      );
+
+      this.cycleCompleteDoorbell.updateCharacteristic(
+        this.platform.Characteristic.ProgrammableSwitchEvent,
+        this.platform.Characteristic
+          .ProgrammableSwitchEvent.SINGLE_PRESS,
+      );
+    };
+
+    // Ring #1 immediately
+    ringDoorbell(1);
+
+    // Ring #2 after 1.2 seconds
+    setTimeout(() => {
+      ringDoorbell(2);
+    }, 1200);
+
+    // Ring #3 after 2.4 seconds
+    setTimeout(() => {
+      ringDoorbell(3);
+    }, 2400);
   }
   private ringMayBeStuckDoorbell(): void {
     if (!this.mayBeStuckDoorbell) {
