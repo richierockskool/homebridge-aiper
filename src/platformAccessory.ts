@@ -332,7 +332,7 @@ export class ExamplePlatformAccessory {
       }
 
       this.activeMode = mode;
-      this.updateModeSwitches();
+      
 
       this.platform.log.info(
         `Aiper mode selected: ${mode}`,
@@ -347,8 +347,7 @@ export class ExamplePlatformAccessory {
     }
 
     this.activeMode = undefined;
-    this.updateModeSwitches();
-
+    
     this.platform.log.info(
       `Aiper mode stopped: ${mode}`,
     );
