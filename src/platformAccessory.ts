@@ -398,12 +398,11 @@ export class ExamplePlatformAccessory {
         return;
       }
 
-      this.activeMode = mode;
-
       /*
-     * Immediately make HomeKit behave as four mutually-exclusive
-     * mode buttons.
+     * Update HomeKit immediately so the four mode controls behave
+     * like radio buttons.
      */
+      this.activeMode = mode;
       this.updateModeSwitches();
 
       this.platform.log.info(
@@ -414,6 +413,12 @@ export class ExamplePlatformAccessory {
       return;
     }
 
+    /*
+   * Ignore OFF callbacks from switches that were turned off only
+   * because another mode became active.
+   *
+   * This prevents HomeKit from sending AT+MODE=0 during a mode change.
+   */
     if (this.activeMode !== mode) {
       return;
     }
