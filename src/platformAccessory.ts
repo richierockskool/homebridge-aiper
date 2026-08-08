@@ -80,6 +80,50 @@ export class ExamplePlatformAccessory {
       'waterline',
     );
 
+    this.platform.aiperClient.onStateUpdate(state => {
+      let reportedMode: AiperMode | undefined;
+
+      switch (state.mode) {
+      case 1:
+        reportedMode = 'Smart';
+        break;
+
+      case 2:
+        reportedMode = 'Floor';
+        break;
+
+      case 3:
+        reportedMode = 'Wall';
+        break;
+
+      case 4:
+        reportedMode = 'Waterline';
+        break;
+
+      default:
+      /*
+       * Ignore mode=0 here.
+       *
+       * The Aiper reports mode=0 temporarily while waking,
+       * transitioning between modes, and returning to idle.
+       * We do not want those temporary reports turning all
+       * HomeKit switches off.
+       */
+        return;
+      }
+
+      if (this.activeMode === reportedMode) {
+        return;
+      }
+
+      this.activeMode = reportedMode;
+
+      this.platform.log.info(
+        `Aiper confirmed mode: ${reportedMode}`,
+      );
+
+      this.updateModeSwitches();
+    });
   }
 
   private setupCycleCompleteDoorbell(): void {
@@ -355,7 +399,12 @@ export class ExamplePlatformAccessory {
       }
 
       this.activeMode = mode;
-      
+
+      /*
+     * Immediately make HomeKit behave as four mutually-exclusive
+     * mode buttons.
+     */
+      this.updateModeSwitches();
 
       this.platform.log.info(
         `Aiper mode selected: ${mode}`,
@@ -370,7 +419,7 @@ export class ExamplePlatformAccessory {
     }
 
     this.activeMode = undefined;
-    
+
     this.platform.log.info(
       `Aiper mode stopped: ${mode}`,
     );
