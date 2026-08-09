@@ -281,9 +281,11 @@ export class ExamplePlatformAccessory {
       .getCharacteristic(
         this.platform.Characteristic.ChargingState,
       )
-      .onGet(
-        async () =>
-          this.platform.Characteristic.ChargingState
+      .onGet(async () =>
+        this.platform.aiperClient.latestCharging
+          ? this.platform.Characteristic.ChargingState
+            .CHARGING
+          : this.platform.Characteristic.ChargingState
             .NOT_CHARGING,
       );
 
@@ -310,9 +312,17 @@ export class ExamplePlatformAccessory {
           : this.platform.Characteristic.StatusLowBattery
             .BATTERY_LEVEL_NORMAL,
       );
-
+      this.batteryService.updateCharacteristic(
+        this.platform.Characteristic.ChargingState,
+        state.charging
+          ? this.platform.Characteristic.ChargingState
+            .CHARGING
+          : this.platform.Characteristic.ChargingState
+            .NOT_CHARGING,
+      );
       this.platform.log.info(
-        `Aiper HomeKit battery updated: ${batteryLevel}%`,
+        `Aiper HomeKit battery updated: ${batteryLevel}% ` +
+  `charging=${state.charging}`,
       );
     });  
     this.batteryService.updateCharacteristic(
@@ -331,7 +341,9 @@ export class ExamplePlatformAccessory {
 
     this.batteryService.updateCharacteristic(
       this.platform.Characteristic.ChargingState,
-      this.platform.Characteristic.ChargingState.NOT_CHARGING,
+      this.platform.aiperClient.latestCharging
+        ? this.platform.Characteristic.ChargingState.CHARGING
+        : this.platform.Characteristic.ChargingState.NOT_CHARGING,
     );
   }
 

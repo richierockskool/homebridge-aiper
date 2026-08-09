@@ -17,6 +17,7 @@ export interface AiperStateUpdate {
   inWater: number;
   online: boolean;
   wifiConnected: boolean;
+  charging: boolean;
 }
 export class AiperClient {
 
@@ -44,6 +45,7 @@ export class AiperClient {
   public latestInWater = 0;
   public latestOnline = true;
   public latestWifiConnected = true;
+  public latestCharging = false;
 
   private hasObservedCleaningCycle = false;
   private disconnectedDuringCycle = false;
@@ -378,6 +380,7 @@ export class AiperClient {
       inWater: this.latestInWater,
       online: this.latestOnline,
       wifiConnected: this.latestWifiConnected,
+      charging: this.latestCharging,
     };
 
     for (const listener of this.stateUpdateListeners) {
@@ -661,42 +664,53 @@ export class AiperClient {
     let recognised = false;
 
     const status =
-    this.numberFromUnknown(data.status);
+  this.numberFromUnknown(data.status);
+
+    const mode =
+  this.numberFromUnknown(data.mode);
+
+    const battery = this.numberFromUnknown(
+      data.cap ?? data.battery,
+    );
+
+    const warning = this.numberFromUnknown(
+      data.warn ?? data.warn_code,
+    );
+
+    const inWater = this.numberFromUnknown(
+      data.in_water ?? data.inWater,
+    );
+
+    /*
+ * IMPORTANT:
+ * Determine charging BEFORE latestBattery is updated,
+ * so a battery drop can be detected.
+ */
+    this.updateChargingState(
+      status,
+      battery,
+      inWater,
+    );
 
     if (status !== undefined) {
       this.latestStatus = status;
       recognised = true;
     }
 
-    const mode =
-    this.numberFromUnknown(data.mode);
-
     if (mode !== undefined) {
       this.latestMode = mode;
       recognised = true;
     }
-
-    const battery = this.numberFromUnknown(
-      data.cap ?? data.battery,
-    );
 
     if (battery !== undefined) {
       this.latestBattery = battery;
       recognised = true;
     }
 
-    const warning = this.numberFromUnknown(
-      data.warn ?? data.warn_code,
-    );
-
     if (warning !== undefined) {
       this.latestWarn = warning;
       recognised = true;
     }
-
-    const inWater = this.numberFromUnknown(
-      data.in_water ?? data.inWater,
-    );
 
     if (inWater !== undefined) {
       this.latestInWater = inWater;
@@ -705,18 +719,18 @@ export class AiperClient {
 
     if (data.online !== undefined) {
       this.latestOnline =
-      this.normaliseConnectionValue(data.online);
+    this.normaliseConnectionValue(data.online);
 
       recognised = true;
     }
 
     const wifiValue =
-    data.sta ??
-    data.wifiConnected;
+  data.sta ??
+  data.wifiConnected;
 
     if (wifiValue !== undefined) {
       this.latestWifiConnected =
-      this.normaliseConnectionValue(wifiValue);
+    this.normaliseConnectionValue(wifiValue);
 
       recognised = true;
     }
@@ -733,7 +747,9 @@ export class AiperClient {
     `warn=${this.latestWarn} ` +
     `inWater=${this.latestInWater} ` +
     `online=${this.latestOnline} ` +
-    `wifi=${this.latestWifiConnected}`,
+    `wifi=${this.latestWifiConnected} ` +
+    `charging=${this.latestCharging}`,
+
     );
 
     this.emitStateUpdate();
@@ -911,7 +927,8 @@ export class AiperClient {
       `warn=${this.latestWarn} ` +
       `inWater=${this.latestInWater} ` +
       `online=${this.latestOnline} ` +
-      `wifi=${this.latestWifiConnected}`,
+      `wifi=${this.latestWifiConnected} ` +
+      `charging=${this.latestCharging}`,
     );
   }
 
@@ -939,7 +956,45 @@ export class AiperClient {
 
   return true;
   }
-  
+  private updateChargingState(
+    reportedStatus: number | undefined,
+    reportedBattery: number | undefined,
+    reportedInWater: number | undefined,
+  ): void {
+    const inWater =
+    reportedInWater ?? this.latestInWater;
+
+    /*
+   * If the robot is in the pool, it cannot be charging.
+   */
+    if (inWater !== 0) {
+      this.latestCharging = false;
+      return;
+    }
+
+    /*
+   * During confirmed charging the N1 Max repeatedly reports
+   * status=2, interspersed with status=0 reports.
+   *
+   * status=2 therefore confirms charging, but status=0 does NOT
+   * immediately cancel it.
+   */
+    if (reportedStatus === 2) {
+      this.latestCharging = true;
+      return;
+    }
+
+    /*
+   * A falling battery level while out of the water is strong
+   * confirmation that the cleaner has been removed from the charger.
+   */
+    if (
+      reportedBattery !== undefined &&
+    reportedBattery < this.latestBattery
+    ) {
+      this.latestCharging = false;
+    }
+  }
 
   private numberFromUnknown(
     value: unknown,
@@ -991,6 +1046,7 @@ export class AiperClient {
      */
     return true;
   }
+
   private async sendMachineAt(atCommand: string): Promise<void> {
     if (!this.mqttConnection || !this.mqttConnected) {
       await this.connectMqtt();
@@ -1046,6 +1102,7 @@ export class AiperClient {
     this.lastCommandAt = now;
 
     this.log.info(`Aiper real command: ${mode} -> AT+MODE=${modeId}`);
+    this.latestCharging = false;
     await this.sendMachineAt(`AT+MODE=${modeId}`);
 
     
