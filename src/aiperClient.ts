@@ -432,20 +432,13 @@ export class AiperClient {
     }
 
     this.hasObservedCleaningCycle = true;
-    this.cycleStartedAt = Date.now();
-
-    /*
-   * The cleaner normally loses Wi-Fi after entering the pool.
-   * Some devices do not publish an explicit offline report, so a
-   * confirmed cleaning cycle means we are now waiting for its return.
-   */
     this.disconnectedDuringCycle = true;
 
     this.completionSentForCurrentCycle = false;
     this.stuckNotificationSentForCurrentCycle = false;
 
     this.log.info(
-      `Aiper cleaning cycle started (${source}). ` +
+      `Aiper cleaning cycle confirmed (${source}). ` +
     'Starting 3 hour 15 minute safety timer.',
     );
 
@@ -521,33 +514,31 @@ export class AiperClient {
 
   private evaluateCycleState(): void {
     const cleanerIsInWater = this.latestInWater !== 0;
-    const cleanerIsRunning = this.latestStatus !== 0;
 
     const connected =
     this.latestOnline &&
     this.latestWifiConnected;
 
-    const cycleAge =
-    this.cycleStartedAt > 0
-      ? Date.now() - this.cycleStartedAt
-      : 0;
-
-    const launchGracePeriodMilliseconds =
-    10 * 60 * 1000;
+    const hasCleaningMode =
+    this.latestMode >= 1 &&
+    this.latestMode <= 4;
 
     /*
-   * This catches a cycle started through the Aiper app instead of
-   * through HomeKit, but only after an actual in-water operating state
-   * has been reported.
+   * Do NOT start cycle tracking merely because HomeKit sent a command.
+   *
+   * Start only when the Aiper itself has reported a valid cleaning
+   * mode and then disappears from Wi-Fi.
    */
     if (
       !this.hasObservedCleaningCycle &&
-    cleanerIsRunning &&
-    cleanerIsInWater
+    hasCleaningMode &&
+    !connected
     ) {
       this.beginCleaningCycle(
-        'confirmed MQTT in-water operating state',
+        `robot went offline in mode ${this.latestMode}`,
       );
+
+      return;
     }
 
     if (!this.hasObservedCleaningCycle) {
@@ -560,51 +551,43 @@ export class AiperClient {
     }
 
     /*
-   * Ignore the normal short period between selecting a mode and placing
-   * the cleaner in the pool. After ten minutes, an online robot reporting
-   * inWater=0 is considered retrieved, docked, or back on the charger.
+   * A tracked robot has reconnected.
+   *
+   * If it reconnects while still in the water, that is the newer
+   * waterline-return behavior requested by Joeyski.
    */
     if (
-      !cleanerIsInWater &&
-    cycleAge >= launchGracePeriodMilliseconds
+      cleanerIsInWater &&
+    !this.completionSentForCurrentCycle
     ) {
-      this.resetCleaningCycle(
-        'robot is online and out of the water',
+      this.completionSentForCurrentCycle = true;
+      this.clearCycleTimeout();
+
+      this.log.info(
+        'Aiper returned to Wi-Fi at the waterline. Cycle completion confirmed.',
       );
+
+      this.emitCycleComplete();
+
+      this.hasObservedCleaningCycle = false;
+      this.disconnectedDuringCycle = false;
+      this.stuckNotificationSentForCurrentCycle = false;
 
       return;
     }
 
     /*
-   * Completion for models that return to the waterline:
-   * - a cycle was active;
-   * - the cleaner was away/offline;
-   * - it has reconnected;
-   * - it still reports being in the water.
+   * If it reconnects out of the water, it has been retrieved.
+   * Cancel the timer immediately.
+   *
+   * This is your N1 Max case: somebody pulls it out, it reconnects,
+   * then it eventually goes back to sleep on the charger.
    */
-    const returnedAtWaterline =
-    this.disconnectedDuringCycle &&
-    connected &&
-    cleanerIsInWater &&
-    !this.completionSentForCurrentCycle;
-
-    if (!returnedAtWaterline) {
-      return;
+    if (!cleanerIsInWater) {
+      this.resetCleaningCycle(
+        'robot reconnected out of the water / retrieved',
+      );
     }
-
-    this.completionSentForCurrentCycle = true;
-    this.clearCycleTimeout();
-
-    this.log.info(
-      'Aiper returned to Wi-Fi at the waterline. Cycle completion confirmed.',
-    );
-
-    this.emitCycleComplete();
-
-    this.hasObservedCleaningCycle = false;
-    this.disconnectedDuringCycle = false;
-    this.stuckNotificationSentForCurrentCycle = false;
-    this.cycleStartedAt = 0;
   }
   private handleIncomingMqtt(
     topic: string,
@@ -1065,7 +1048,7 @@ export class AiperClient {
     this.log.info(`Aiper real command: ${mode} -> AT+MODE=${modeId}`);
     await this.sendMachineAt(`AT+MODE=${modeId}`);
 
-    this.beginCleaningCycle(`HomeKit ${mode} command`);
+    
   }
 
   async stop(): Promise<void> {
