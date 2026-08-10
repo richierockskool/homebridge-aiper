@@ -14,8 +14,8 @@ export class ExamplePlatformAccessory {
   private wallService?: Service;
   private waterlineService?: Service;
   private batteryService?: Service;
-  private cycleCompleteDoorbell?: Service;
-  private mayBeStuckDoorbell?: Service;
+  private cycleCompleteSensor?: Service;
+  private mayBeStuckSensor?: Service;
 
   private activeMode?: AiperMode;
 
@@ -56,11 +56,11 @@ export class ExamplePlatformAccessory {
       break;
 
     case 'CycleComplete':
-      this.setupCycleCompleteDoorbell();
+      this.setupCycleCompleteSensor();
       break;
 
     case 'MayBeStuck':
-      this.setupMayBeStuckDoorbell();
+      this.setupMayBeStuckSensor();
       break;
 
     default:
@@ -125,18 +125,23 @@ export class ExamplePlatformAccessory {
       this.updateModeSwitches();
     });
   }
-
-  private setupCycleCompleteDoorbell(): void {
+  private setupCycleCompleteSensor(): void {
     const serviceName = 'Aiper Has Finished the Job';
+    const oldDoorbell =
+  this.accessory.getService(this.platform.Service.Doorbell);
 
-    this.cycleCompleteDoorbell =
-    this.accessory.getService(this.platform.Service.Doorbell) ??
+    if (oldDoorbell) {
+      this.accessory.removeService(oldDoorbell);
+    }
+
+    this.cycleCompleteSensor =
+    this.accessory.getService(this.platform.Service.MotionSensor) ??
     this.accessory.addService(
-      this.platform.Service.Doorbell,
+      this.platform.Service.MotionSensor,
       serviceName,
     );
 
-    this.cycleCompleteDoorbell
+    this.cycleCompleteSensor
       .setCharacteristic(
         this.platform.Characteristic.Name,
         serviceName,
@@ -144,27 +149,38 @@ export class ExamplePlatformAccessory {
       .setCharacteristic(
         this.platform.Characteristic.ConfiguredName,
         serviceName,
+      )
+      .setCharacteristic(
+        this.platform.Characteristic.MotionDetected,
+        false,
       );
 
     this.platform.aiperClient.onCycleComplete(() => {
-      this.ringCycleCompleteDoorbell();
+      this.triggerCycleCompleteNotification();
     });
 
     this.platform.log.info(
-      'Aiper cycle-complete HomeKit doorbell loaded.',
+      'Aiper cycle-complete HomeKit notification sensor loaded.',
     );
   }
-  private setupMayBeStuckDoorbell(): void {
-    const serviceName = 'Aiper May Be Stuck';
 
-    this.mayBeStuckDoorbell =
-    this.accessory.getService(this.platform.Service.Doorbell) ??
+  private setupMayBeStuckSensor(): void {
+    const serviceName = 'Aiper May Be Stuck';
+    const oldDoorbell =
+  this.accessory.getService(this.platform.Service.Doorbell);
+
+    if (oldDoorbell) {
+      this.accessory.removeService(oldDoorbell);
+    }
+
+    this.mayBeStuckSensor =
+    this.accessory.getService(this.platform.Service.MotionSensor) ??
     this.accessory.addService(
-      this.platform.Service.Doorbell,
+      this.platform.Service.MotionSensor,
       serviceName,
     );
 
-    this.mayBeStuckDoorbell
+    this.mayBeStuckSensor
       .setCharacteristic(
         this.platform.Characteristic.Name,
         serviceName,
@@ -172,76 +188,72 @@ export class ExamplePlatformAccessory {
       .setCharacteristic(
         this.platform.Characteristic.ConfiguredName,
         serviceName,
+      )
+      .setCharacteristic(
+        this.platform.Characteristic.MotionDetected,
+        false,
       );
 
     this.platform.aiperClient.onMayBeStuck(() => {
-      this.ringMayBeStuckDoorbell();
+      this.triggerMayBeStuckNotification();
     });
 
     this.platform.log.info(
-      'Aiper may-be-stuck HomeKit doorbell loaded.',
+      'Aiper may-be-stuck HomeKit notification sensor loaded.',
     );
   }
 
-  private ringCycleCompleteDoorbell(): void {
-    if (!this.cycleCompleteDoorbell) {
+  private triggerCycleCompleteNotification(): void {
+    if (!this.cycleCompleteSensor) {
       this.platform.log.warn(
-        'Aiper cycle-complete doorbell service is unavailable.',
+        'Aiper cycle-complete notification sensor is unavailable.',
       );
       return;
     }
 
     this.platform.log.info(
-      'Aiper has finished the job and is waiting at the waterline. Sending 3 HomeKit doorbell rings.',
+      'Aiper has finished the job. Triggering HomeKit notification.',
     );
 
-    const ringDoorbell = (ringNumber: number): void => {
-      if (!this.cycleCompleteDoorbell) {
-        return;
-      }
+    this.cycleCompleteSensor.updateCharacteristic(
+      this.platform.Characteristic.MotionDetected,
+      true,
+    );
 
-      this.platform.log.info(
-        `Aiper cycle-complete doorbell ring ${ringNumber} of 3.`,
-      );
-
-      this.cycleCompleteDoorbell.updateCharacteristic(
-        this.platform.Characteristic.ProgrammableSwitchEvent,
-        this.platform.Characteristic
-          .ProgrammableSwitchEvent.SINGLE_PRESS,
-      );
-    };
-
-    // Ring #1 immediately
-    ringDoorbell(1);
-
-    // Ring #2 after 1.2 seconds
     setTimeout(() => {
-      ringDoorbell(2);
-    }, 1200);
-
-    // Ring #3 after 2.4 seconds
-    setTimeout(() => {
-      ringDoorbell(3);
-    }, 2400);
+      this.cycleCompleteSensor?.updateCharacteristic(
+        this.platform.Characteristic.MotionDetected,
+        false,
+      );
+    }, 5000);
   }
-  private ringMayBeStuckDoorbell(): void {
-    if (!this.mayBeStuckDoorbell) {
+
+  private triggerMayBeStuckNotification(): void {
+    if (!this.mayBeStuckSensor) {
       this.platform.log.warn(
-        'Aiper may-be-stuck doorbell service is unavailable.',
+        'Aiper may-be-stuck notification sensor is unavailable.',
       );
       return;
     }
 
     this.platform.log.warn(
-      'Aiper has not returned after 3 hours 15 minutes. Sending HomeKit warning.',
+      'Aiper has not returned after 3 hours 15 minutes. ' +
+    'Triggering HomeKit warning notification.',
     );
 
-    this.mayBeStuckDoorbell.updateCharacteristic(
-      this.platform.Characteristic.ProgrammableSwitchEvent,
-      this.platform.Characteristic
-        .ProgrammableSwitchEvent.SINGLE_PRESS,
+    this.mayBeStuckSensor.updateCharacteristic(
+      this.platform.Characteristic.MotionDetected,
+      true,
     );
+
+    setTimeout(() => {
+      this.mayBeStuckSensor?.updateCharacteristic(
+        this.platform.Characteristic.MotionDetected,
+        false,
+      );
+    }, 5000);
   }
+  
   private setupBatteryAccessory(): void {
     this.batteryService =
       this.accessory.getService(this.platform.Service.Battery) ||
