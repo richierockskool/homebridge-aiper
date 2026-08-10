@@ -257,7 +257,7 @@ export class ExamplePlatformAccessory {
     }
 
     this.platform.log.warn(
-      'Aiper has not returned after 3 hours 15 minutes. ' +
+      'Aiper has not returned after 3 hours. ' +
     'Sending 3 HomeKit warning rings.',
     );
 
