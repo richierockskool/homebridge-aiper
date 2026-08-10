@@ -892,7 +892,14 @@ export class AiperClient {
   ) {
     this.latestInWater = inWater;
   }
+  if (network.online !== undefined) {
+    const online =
+    this.normaliseConnectionValue(network.online);
 
+    if (online !== this.latestOnline) {
+      this.latestOnline = online;
+    }
+  }
   const wifiValue =
     network.sta ??
     network.wifiConnected;
