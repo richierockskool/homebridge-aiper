@@ -832,70 +832,66 @@ export class AiperClient {
 
   
 
-  const status = this.numberFromUnknown(machine.status);
+  const status =
+  this.numberFromUnknown(machine.status);
 
-  if (
-    status !== undefined &&
-    status !== this.latestStatus
-  ) {
-    this.latestStatus = status;
-    
-  }
-
-  const mode = this.numberFromUnknown(machine.mode);
-
-  if (
-    mode !== undefined &&
-    mode !== this.latestMode
-  ) {
-    this.latestMode = mode;
-    
-  }
+  const mode =
+  this.numberFromUnknown(machine.mode);
 
   const battery = this.numberFromUnknown(
     machine.cap ?? machine.battery,
   );
 
-  if (
-    battery !== undefined &&
-    battery !== this.latestBattery
-  ) {
-    this.latestBattery = battery;
-    
-  }
-
   const warning = this.numberFromUnknown(
     machine.warn ?? machine.warn_code,
   );
-
-  if (
-    warning !== undefined &&
-    warning !== this.latestWarn
-  ) {
-    this.latestWarn = warning;
-    
-  }
 
   const inWater = this.numberFromUnknown(
     machine.in_water ?? machine.inWater,
   );
 
+  /*
+ * Determine charging BEFORE latestBattery is updated.
+ */
+  this.updateChargingState(
+    status,
+    battery,
+    inWater,
+  );
+
   if (
-    inWater !== undefined &&
-    inWater !== this.latestInWater
+    status !== undefined &&
+  status !== this.latestStatus
   ) {
-    this.latestInWater = inWater;
-   
+    this.latestStatus = status;
   }
 
-  if (network.online !== undefined) {
-    const online =
-      this.normaliseConnectionValue(network.online);
+  if (
+    mode !== undefined &&
+  mode !== this.latestMode
+  ) {
+    this.latestMode = mode;
+  }
 
-    if (online !== this.latestOnline) {
-      this.latestOnline = online;
-     
-    }
+  if (
+    battery !== undefined &&
+  battery !== this.latestBattery
+  ) {
+    this.latestBattery = battery;
+  }
+
+  if (
+    warning !== undefined &&
+  warning !== this.latestWarn
+  ) {
+    this.latestWarn = warning;
+  }
+
+  if (
+    inWater !== undefined &&
+  inWater !== this.latestInWater
+  ) {
+    this.latestInWater = inWater;
   }
 
   const wifiValue =
