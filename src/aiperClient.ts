@@ -1106,6 +1106,7 @@ export class AiperClient {
     this.log.info(`Aiper real command: ${mode} -> AT+MODE=${modeId}`);
     this.latestCharging = false;
     await this.sendMachineAt(`AT+MODE=${modeId}`);
+    this.beginCleaningCycle(`mode ${mode} started`);
 
     
   }
