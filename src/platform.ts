@@ -107,6 +107,33 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         serialNumber: this.config.deviceId ?? 'Unknown',
       },
     ];
+    const legacyAccessoryIds = [
+      'aiper-cycle-complete',
+      'aiper-may-be-stuck',
+    ];
+
+    for (const legacyId of legacyAccessoryIds) {
+      const legacyUuid =
+    this.api.hap.uuid.generate(legacyId);
+
+      const legacyAccessory =
+    this.accessories.get(legacyUuid);
+
+      if (legacyAccessory) {
+        this.log.info(
+          'Removing legacy Aiper accessory from cache:',
+          legacyAccessory.displayName,
+        );
+
+        this.api.unregisterPlatformAccessories(
+          PLUGIN_NAME,
+          PLATFORM_NAME,
+          [legacyAccessory],
+        );
+
+        this.accessories.delete(legacyUuid);
+      }
+    }
     for (const device of aiperDevices) {
       const uuid = this.api.hap.uuid.generate(device.uniqueId);
       const existingAccessory = this.accessories.get(uuid);
