@@ -1103,10 +1103,24 @@ export class AiperClient {
     this.lastCommandKey = key;
     this.lastCommandAt = now;
 
-    this.log.info(`Aiper real command: ${mode} -> AT+MODE=${modeId}`);
+    this.log.info(
+      `Aiper real command: ${mode} -> AT+MODE=${modeId}`,
+    );
+
     this.latestCharging = false;
+
     await this.sendMachineAt(`AT+MODE=${modeId}`);
-    this.beginCleaningCycle(`mode ${mode} started`);
+
+    /*
+ * Arm the cleaning-cycle safety timer from the successful
+ * cleaning command itself.
+ *
+ * Do not depend on the robot later reporting online=false,
+ * because the N1 Max can disappear from MQTT during a run.
+ */
+    this.beginCleaningCycle(
+      `HomeKit started ${mode} cleaning mode`,
+    );
 
     
   }
