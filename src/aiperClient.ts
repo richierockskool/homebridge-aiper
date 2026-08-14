@@ -536,6 +536,21 @@ export class AiperClient {
     this.latestMode <= 4;
 
     /*
+ * A robot that is charging cannot be in an active cleaning cycle.
+ *
+ * The N1 Max can retain its previous mode (for example Floor)
+ * while sitting on the charger. When it later falls asleep,
+ * online=false must NOT be mistaken for the start of a cleaning run.
+ */
+    if (this.latestCharging) {
+      if (this.hasObservedCleaningCycle) {
+        this.resetCleaningCycle(
+          'robot is charging / on charger',
+        );
+      }
+
+      return;
+    } /*
    * Do NOT start cycle tracking merely because HomeKit sent a command.
    *
    * Start only when the Aiper itself has reported a valid cleaning
