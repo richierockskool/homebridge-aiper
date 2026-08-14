@@ -434,7 +434,16 @@ export class AiperClient {
     }
 
     this.hasObservedCleaningCycle = true;
-    this.disconnectedDuringCycle = true;
+
+    /*
+ * If the timer was started directly from a HomeKit cleaning command,
+ * the robot may still be online for a short time before leaving Wi-Fi.
+ *
+ * Only mark the cycle as having actually disconnected when the
+ * current connection state proves it.
+ */
+    this.disconnectedDuringCycle =
+  !(this.latestOnline && this.latestWifiConnected);
 
     this.completionSentForCurrentCycle = false;
     this.stuckNotificationSentForCurrentCycle = false;
@@ -459,8 +468,7 @@ export class AiperClient {
         return;
       }
 
-      const cleanerIsInWater =
-    this.latestInWater !== 0;
+     
 
       const connected =
     this.latestOnline &&
@@ -476,17 +484,19 @@ export class AiperClient {
    * cleaner is already online and out of the pool, such as when it has
    * been retrieved and returned to the charger.
    */
+      
       if (
         stateIsRecent &&
-    connected &&
-    !cleanerIsInWater
+  connected &&
+  this.latestCharging
       ) {
         this.resetCleaningCycle(
-          'timeout reached but robot is online and out of the water',
+          'timeout reached but robot is already charging',
         );
 
         return;
       }
+
 
       this.stuckNotificationSentForCurrentCycle = true;
       this.emitMayBeStuck();
@@ -559,8 +569,9 @@ export class AiperClient {
    * waterline-return behavior requested by Joeyski.
    */
     if (
-      cleanerIsInWater &&
-    !this.completionSentForCurrentCycle
+      this.disconnectedDuringCycle &&
+  cleanerIsInWater &&
+  !this.completionSentForCurrentCycle
     ) {
       this.completionSentForCurrentCycle = true;
       this.clearCycleTimeout();
@@ -585,9 +596,20 @@ export class AiperClient {
    * This is your N1 Max case: somebody pulls it out, it reconnects,
    * then it eventually goes back to sleep on the charger.
    */
-    if (!cleanerIsInWater) {
+    /*
+ * Do not cancel a newly started cycle merely because the robot is
+ * still online and out of the water for a few seconds after the
+ * cleaning command.
+ *
+ * Only treat it as genuinely retrieved once charging has started.
+ */
+    if (
+      this.disconnectedDuringCycle &&
+  !cleanerIsInWater &&
+  this.latestCharging
+    ) {
       this.resetCleaningCycle(
-        'robot reconnected out of the water / retrieved',
+        'robot reconnected out of the water and is charging / retrieved',
       );
     }
   }
