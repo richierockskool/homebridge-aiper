@@ -257,8 +257,8 @@ export class ExamplePlatformAccessory {
     }
 
     this.platform.log.warn(
-      'Aiper has not returned after 3 hours. ' +
-    'Sending 3 HomeKit warning rings.',
+      'Aiper has not returned after 160 minutes. ' +
+'Sending 3 HomeKit warning rings.',
     );
 
     const ringDoorbell = (ringNumber: number): void => {

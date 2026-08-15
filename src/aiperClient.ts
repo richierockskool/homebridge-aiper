@@ -56,7 +56,7 @@ export class AiperClient {
   private cycleStartedAt = 0;
   private lastRecognisedStateAt = 0;
   private readonly cycleTimeoutMilliseconds =
-    (3 * 60 * 60 * 1000);
+    (160 * 60 * 1000);
 
   private readonly cycleCompleteListeners = new Set<() => void>();
   private readonly mayBeStuckListeners = new Set<() => void>();
@@ -412,7 +412,7 @@ export class AiperClient {
   }
   private emitMayBeStuck(): void {
     this.log.warn(
-      'Aiper has not returned to Wi-Fi after 3 hours. Sending HomeKit warning.',
+      'Aiper has not returned to Wi-Fi after 160 minutes. Sending HomeKit warning.',
     );
 
     for (const listener of this.mayBeStuckListeners) {
@@ -450,7 +450,7 @@ export class AiperClient {
 
     this.log.info(
       `Aiper cleaning cycle confirmed (${source}). ` +
-    'Starting 3 hour safety timer.',
+    'Starting 2 hour 40 minute safety timer.',
     );
 
     this.startCycleTimeout();
