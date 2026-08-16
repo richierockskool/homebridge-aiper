@@ -66,8 +66,16 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
           this.discoverDevices();
         })
         .catch((error: unknown) => {
-          this.log.error('Aiper startup failed:', error);
-          this.log.warn('Loading HomeKit accessories anyway.');
+          const message =
+    error instanceof Error
+      ? error.message
+      : String(error);
+
+          this.log.warn(
+            `Aiper cloud connection unavailable at startup (${message}). ` +
+    'Loading HomeKit accessories from cache.',
+          );
+
           this.discoverDevices();
         });
     });
