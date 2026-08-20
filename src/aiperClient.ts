@@ -1121,10 +1121,22 @@ export class AiperClient {
 
     this.log.info(`Aiper MQTT publish ${topic}: ${message}`);
 
+    this.log.info(
+      `Aiper MQTT sending command: ${atCommand}`,
+    );
+
+    const publishStartedAt = Date.now();
+
     await this.mqttConnection.publish(
       topic,
       message,
       mqtt.QoS.AtLeastOnce,
+    );
+
+    this.log.info(
+      `Aiper MQTT command acknowledged after ${
+        Date.now() - publishStartedAt
+      }ms: ${atCommand}`,
     );
   }
   async startMode(mode: AiperMode): Promise<void> {
