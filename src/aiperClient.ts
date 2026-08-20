@@ -143,9 +143,8 @@ export class AiperClient {
     const text = await response.text();
     const decrypted = this.crypto.decryptResponse(text);
     const payload = JSON.parse(decrypted);
-    this.log.info(
-      `Aiper getEquipment response: ${JSON.stringify(payload)}`,
-    );
+    
+    
 
     if (!(payload.code === 0 || payload.code === '0' || payload.successful === true)) {
       throw new Error(`Aiper getDevices failed: ${payload.msg ?? payload.message ?? 'Unknown error'}`);
@@ -1124,22 +1123,10 @@ export class AiperClient {
 
     this.log.info(`Aiper MQTT publish ${topic}: ${message}`);
 
-    this.log.info(
-      `Aiper MQTT sending command: ${atCommand}`,
-    );
-
-    const publishStartedAt = Date.now();
-
     await this.mqttConnection.publish(
       topic,
       message,
       mqtt.QoS.AtLeastOnce,
-    );
-
-    this.log.info(
-      `Aiper MQTT command acknowledged after ${
-        Date.now() - publishStartedAt
-      }ms: ${atCommand}`,
     );
   }
   async startMode(mode: AiperMode): Promise<void> {
