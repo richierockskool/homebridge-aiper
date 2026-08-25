@@ -36,6 +36,8 @@ export class AiperClient {
   private awsSessionToken?: string;
   private mqttConnection?: mqtt.MqttClientConnection;
   private mqttConnected = false;
+  private mqttReconnectPromise?: Promise<void>;
+  private mqttSubscriptionsReady = false;
   private lastCommandKey?: string;
   private lastCommandAt = 0;
   public latestBattery = 100;
@@ -253,23 +255,47 @@ export class AiperClient {
     // Return battery, charging, current mode, online/offline, etc.
   }
   async connectMqtt(): Promise<void> {
+    if (this.mqttReconnectPromise) {
+      await this.mqttReconnectPromise;
+      return;
+    }
+
+    this.mqttReconnectPromise = this.performMqttConnect();
+
+    try {
+      await this.mqttReconnectPromise;
+    } finally {
+      this.mqttReconnectPromise = undefined;
+    }
+  }
+
+  private async performMqttConnect(): Promise<void> {
     if (!this.iotEndpoint || !this.awsRegion || !this.identityId) {
-      throw new Error('Aiper MQTT skipped: missing IoT endpoint/region/identity.');
+      throw new Error(
+        'Aiper MQTT skipped: missing IoT endpoint/region/identity.',
+      );
     }
 
     if (!this.awsAccessKeyId || !this.awsSecretAccessKey) {
-      throw new Error('Aiper MQTT skipped: missing AWS credentials.');
+      throw new Error(
+        'Aiper MQTT skipped: missing AWS credentials.',
+      );
     }
+
+    this.mqttConnected = false;
+    this.mqttSubscriptionsReady = false;
 
     const bootstrap = new io.ClientBootstrap();
 
-    const credentialsProvider = auth.AwsCredentialsProvider.newStatic(
+    const credentialsProvider =
+    auth.AwsCredentialsProvider.newStatic(
       this.awsAccessKeyId,
       this.awsSecretAccessKey,
       this.awsSessionToken,
     );
 
-    const configBuilder = iot.AwsIotMqttConnectionConfigBuilder.new_with_websockets({
+    const configBuilder =
+    iot.AwsIotMqttConnectionConfigBuilder.new_with_websockets({
       region: this.awsRegion,
       credentials_provider: credentialsProvider,
     });
@@ -280,14 +306,72 @@ export class AiperClient {
     configBuilder.with_keep_alive_seconds(60);
 
     const client = new mqtt.MqttClient(bootstrap);
-    this.mqttConnection = client.new_connection(configBuilder.build());
+    const connection =
+    client.new_connection(configBuilder.build());
 
-    await this.mqttConnection.connect();
+    /*
+   * AWS MQTT connection lifecycle.
+   *
+   * The old code set mqttConnected=true once and never cleared it
+   * when the underlying AWS connection was interrupted.
+   */
+
+    connection.on('interrupt', (error) => {
+      this.mqttConnected = false;
+      this.mqttSubscriptionsReady = false;
+
+      this.log.warn(
+        `Aiper MQTT connection interrupted: ${
+          error instanceof Error
+            ? error.message
+            : String(error)
+        }`,
+      );
+    });
+
+    connection.on('resume', (returnCode, sessionPresent) => {
+      this.mqttConnected = true;
+
+      this.log.info(
+        'Aiper MQTT connection resumed ' +
+  `(returnCode=${returnCode}, sessionPresent=${sessionPresent}).`,
+      );
+
+      /*
+     * Re-subscribe even when AWS says the previous session exists.
+     * This is harmless and prevents a resumed connection from being
+     * alive but no longer receiving Aiper state updates.
+     */
+      void this.restoreMqttSubscriptions();
+    });
+
+    connection.on('disconnect', () => {
+      this.mqttConnected = false;
+      this.mqttSubscriptionsReady = false;
+
+      this.log.warn('Aiper MQTT disconnected.');
+    });
+
+    connection.on('error', (error) => {
+      this.mqttConnected = false;
+
+      this.log.error(
+        `Aiper MQTT error: ${
+          error instanceof Error
+            ? error.message
+            : String(error)
+        }`,
+      );
+    });
+
+    this.mqttConnection = connection;
+
+    await connection.connect();
 
     this.mqttConnected = true;
+
     this.log.info('Aiper MQTT connected.');
   }
-
   private crc16(data: string): number {
     let crc = 0x9966;
 
@@ -347,6 +431,7 @@ export class AiperClient {
 
       this.log.info(`Aiper subscribed to ${topic}`);
     }
+    this.mqttSubscriptionsReady = true; 
   }
   public onCycleComplete(listener: () => void): () => void {
     this.cycleCompleteListeners.add(listener);
@@ -394,6 +479,35 @@ export class AiperClient {
           }`,
         );
       }
+    }
+  }
+  private async restoreMqttSubscriptions(): Promise<void> {
+    if (!this.mqttConnection || !this.mqttConnected) {
+      return;
+    }
+
+    try {
+      this.log.info(
+        'Aiper MQTT restoring device subscriptions...',
+      );
+
+      await this.subscribeToRobot();
+
+      this.mqttSubscriptionsReady = true;
+
+      this.log.info(
+        'Aiper MQTT subscriptions restored.',
+      );
+    } catch (error) {
+      this.mqttSubscriptionsReady = false;
+
+      this.log.error(
+        `Aiper MQTT subscription restore failed: ${
+          error instanceof Error
+            ? error.message
+            : String(error)
+        }`,
+      );
     }
   }
 
@@ -1090,11 +1204,23 @@ export class AiperClient {
 
   private async sendMachineAt(atCommand: string): Promise<void> {
     if (!this.mqttConnection || !this.mqttConnected) {
+      this.log.warn(
+        'Aiper MQTT unavailable before command. Reconnecting...',
+      );
+
       await this.connectMqtt();
+
+      await this.restoreMqttSubscriptions();
     }
 
-    if (!this.mqttConnection) {
-      throw new Error('Aiper MQTT connection unavailable.');
+    if (!this.mqttConnection || !this.mqttConnected) {
+      throw new Error(
+        'Aiper MQTT connection unavailable after reconnect attempt.',
+      );
+    }
+
+    if (!this.mqttSubscriptionsReady) {
+      await this.restoreMqttSubscriptions();
     }
 
     const sn = this.config.deviceId;
