@@ -4,7 +4,7 @@ Adds support for Aiper pool robots.
 
 ## Supported Devices
 
-- Scuba N1 Max
+- Scuba N1 Max and newer models
 
 ## Features
 Apple Homekit for 
