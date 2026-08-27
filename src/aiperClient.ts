@@ -38,6 +38,8 @@ export class AiperClient {
   private mqttConnected = false;
   private mqttReconnectPromise?: Promise<void>;
   private mqttSubscriptionsReady = false;
+  private lastMqttActivityAt = 0;
+  private mqttSessionRefreshPromise?: Promise<void>;
   private lastCommandKey?: string;
   private lastCommandAt = 0;
   public latestBattery = 100;
@@ -511,6 +513,56 @@ export class AiperClient {
     }
   }
 
+  private async refreshMqttSession(): Promise<void> {
+    if (this.mqttSessionRefreshPromise) {
+      await this.mqttSessionRefreshPromise;
+      return;
+    }
+
+    this.mqttSessionRefreshPromise =
+    this.performMqttSessionRefresh();
+
+    try {
+      await this.mqttSessionRefreshPromise;
+    } finally {
+      this.mqttSessionRefreshPromise = undefined;
+    }
+  }
+
+  private async performMqttSessionRefresh(): Promise<void> {
+    this.log.info(
+      'Aiper MQTT session is stale. Refreshing Aiper/AWS connection...',
+    );
+
+    this.mqttConnected = false;
+    this.mqttSubscriptionsReady = false;
+
+    if (this.mqttConnection) {
+      try {
+        await this.mqttConnection.disconnect();
+      } catch {
+      // Ignore a stale/dead connection during forced refresh.
+      }
+    }
+
+    this.mqttConnection = undefined;
+
+    /*
+   * Refresh the complete authentication chain.
+   * This is the important difference from the previous reconnect patch.
+   */
+    await this.login();
+    await this.getOpenIdToken();
+    await this.getAwsCredentials();
+    await this.connectMqtt();
+    await this.subscribeToRobot();
+
+    this.lastMqttActivityAt = Date.now();
+
+    this.log.info(
+      'Aiper MQTT session refresh complete.',
+    );
+  }
   private emitCycleComplete(): void {
     this.log.info('Aiper cleaning cycle complete: sending HomeKit notification.');
 
@@ -748,6 +800,8 @@ export class AiperClient {
     topic: string,
     message: string,
   ): void {
+    this.lastMqttActivityAt = Date.now();
+
     try {
       const payload: unknown = JSON.parse(message);
 
@@ -903,6 +957,7 @@ export class AiperClient {
     `charging=${this.latestCharging}`,
 
     );
+    this.lastRecognisedStateAt = Date.now();
 
     this.emitStateUpdate();
     this.evaluateCycleState();
@@ -1105,7 +1160,10 @@ export class AiperClient {
   /*
  * Always evaluate recognised reports. A completion message can repeat
  * existing values, so requiring stateChanged could suppress the event.
+ * 
  */
+  this.lastRecognisedStateAt = Date.now();
+
   this.emitStateUpdate();
   this.evaluateCycleState();
 
@@ -1203,13 +1261,27 @@ export class AiperClient {
   }
 
   private async sendMachineAt(atCommand: string): Promise<void> {
-    if (!this.mqttConnection || !this.mqttConnected) {
+    const mqttHasBeenQuiet =
+    this.lastMqttActivityAt === 0 ||
+    Date.now() - this.lastMqttActivityAt >
+      10 * 60 * 1000;
+
+    /*
+   * The Aiper/AWS WebSocket can remain apparently connected after
+   * the robot has slept for a long period, while commands no longer
+   * reach the device.
+   *
+   * Refresh the complete authenticated MQTT session before the first
+   * command after prolonged inactivity.
+   */
+    if (mqttHasBeenQuiet) {
+      await this.refreshMqttSession();
+    } else if (!this.mqttConnection || !this.mqttConnected) {
       this.log.warn(
         'Aiper MQTT unavailable before command. Reconnecting...',
       );
 
       await this.connectMqtt();
-
       await this.restoreMqttSubscriptions();
     }
 
