@@ -602,6 +602,7 @@ export class AiperClient {
     }
 
     this.hasObservedCleaningCycle = true;
+    this.cycleStartedAt = Date.now();
 
     /*
  * If the timer was started directly from a HomeKit cleaning command,
@@ -746,21 +747,40 @@ export class AiperClient {
     }
 
     /*
-   * A tracked robot has reconnected.
-   *
-   * If it reconnects while still in the water, that is the newer
-   * waterline-return behavior requested by Joeyski.
-   */
+ * A tracked cleaner that genuinely disappeared during a cleaning
+ * cycle and later reconnects is considered finished.
+ *
+ * Do not depend on inWater here. Different Aiper generations report
+ * the end of a cycle differently:
+ *
+ * - newer models may reconnect at the waterline
+ * - older models may reconnect after being retrieved
+ * - mode/inWater can be stale or model-specific
+ *
+ * Require at least 30 minutes since the cycle began so a brief
+ * Wi-Fi interruption near startup cannot generate a false
+ * completion notification.
+ */
+    const cycleAgeMilliseconds =
+  this.cycleStartedAt > 0
+    ? Date.now() - this.cycleStartedAt
+    : 0;
+
+    const minimumCompletionAgeMilliseconds =
+  30 * 60 * 1000;
+
     if (
       this.disconnectedDuringCycle &&
-  cleanerIsInWater &&
+  connected &&
+  cycleAgeMilliseconds >= minimumCompletionAgeMilliseconds &&
   !this.completionSentForCurrentCycle
     ) {
       this.completionSentForCurrentCycle = true;
       this.clearCycleTimeout();
 
       this.log.info(
-        'Aiper returned to Wi-Fi at the waterline. Cycle completion confirmed.',
+        'Aiper returned to Wi-Fi after a cleaning cycle. ' +
+    'Cycle completion confirmed.',
       );
 
       this.emitCycleComplete();
@@ -768,10 +788,10 @@ export class AiperClient {
       this.hasObservedCleaningCycle = false;
       this.disconnectedDuringCycle = false;
       this.stuckNotificationSentForCurrentCycle = false;
+      this.cycleStartedAt = 0;
 
       return;
     }
-
     /*
    * If it reconnects out of the water, it has been retrieved.
    * Cancel the timer immediately.
