@@ -585,6 +585,9 @@ export class AiperClient {
   }
 
   private async performMqttSessionRefresh(): Promise<void> {
+    this.log.warn(
+      'Aiper MQTT DIAGNOSTIC BUILD 2026-09-16-A',
+    );
     this.log.info(
       'Aiper MQTT session is stale. Refreshing Aiper/AWS connection...',
     );
