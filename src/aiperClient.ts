@@ -367,6 +367,17 @@ export class AiperClient {
    */
 
     connection.on('interrupt', (error) => {
+      /*
+       * Ignore lifecycle events from an MQTT connection that has already
+       * been replaced by a newer connection.
+       */
+      if (this.mqttConnection !== connection) {
+        this.log.debug(
+          'Aiper stale MQTT connection interrupted; ignoring.',
+        );
+        return;
+      }
+
       this.mqttConnected = false;
       this.mqttSubscriptionsReady = false;
 
@@ -380,22 +391,41 @@ export class AiperClient {
     });
 
     connection.on('resume', (returnCode, sessionPresent) => {
+      /*
+       * An abandoned connection can finish reconnecting after a replacement
+       * connection has already become current. Never let it alter the
+       * current MQTT state or subscriptions.
+       */
+      if (this.mqttConnection !== connection) {
+        this.log.debug(
+          'Aiper stale MQTT connection resumed; ignoring.',
+        );
+        return;
+      }
+
       this.mqttConnected = true;
 
       this.log.info(
         'Aiper MQTT connection resumed ' +
-  `(returnCode=${returnCode}, sessionPresent=${sessionPresent}).`,
+        `(returnCode=${returnCode}, sessionPresent=${sessionPresent}).`,
       );
 
-      /*
-     * Re-subscribe even when AWS says the previous session exists.
-     * This is harmless and prevents a resumed connection from being
-     * alive but no longer receiving Aiper state updates.
-     */
       void this.restoreMqttSubscriptions();
     });
 
     connection.on('disconnect', () => {
+      /*
+       * The stale-session refresh intentionally stops waiting for an old
+       * connection after 1.5 seconds. Its eventual disconnect event must
+       * not mark the replacement connection offline.
+       */
+      if (this.mqttConnection !== connection) {
+        this.log.debug(
+          'Aiper stale MQTT connection finished disconnecting; ignoring.',
+        );
+        return;
+      }
+
       this.mqttConnected = false;
       this.mqttSubscriptionsReady = false;
 
@@ -403,7 +433,15 @@ export class AiperClient {
     });
 
     connection.on('error', (error) => {
+      if (this.mqttConnection !== connection) {
+        this.log.debug(
+          'Aiper stale MQTT connection error; ignoring.',
+        );
+        return;
+      }
+
       this.mqttConnected = false;
+      this.mqttSubscriptionsReady = false;
 
       this.log.error(
         `Aiper MQTT error: ${
