@@ -1,3 +1,6 @@
+<img width="1774" height="887" alt="Aiper" src="https://github.com/user-attachments/assets/df950753-9303-4293-8d06-297779123db3" />
+
+
 # Homebridge Aiper
 
 Adds support for Aiper pool robots.
